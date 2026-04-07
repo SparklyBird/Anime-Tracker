@@ -14,8 +14,8 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 - **5 sections** — Watching, Will Watch, Finished, Favorite, Dropped
 - **Auto-fill from MAL** — type a Russian title, it routes through Shikimori to get the romaji name, then fetches poster, genres, synopsis, episode count and score from MyAnimeList automatically
 - **⚡ Quick auto-fill** — one-click fill per card without opening any modal
-- **Bulk import** — paste a plain text list of titles and they're all added at once
-- **Export** — save your list as CSV, JSON, or TXT
+- **Bulk import** — paste a plain text list of titles, or import an existing CSV / JSON backup
+- **Export** — save your full list as CSV, JSON, or TXT at any time
 - **Filters** — by genre, year range, and minimum rating
 - **Duplicate protection** — prevents adding the same anime twice (with a Favorites exception)
 - **Infinite scroll** — loads pages on demand, no pagination clicks
@@ -34,8 +34,8 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 
 ```bash
 # 1. Clone the repo
-git clone https://gitlab.com/your-username/anime-tracker.git
-cd anime-tracker
+git clone https://github.com/SparklyBird/Anime-Tracker.git
+cd Anime-Tracker
 
 # 2. Build
 mvn clean package -DskipTests
@@ -61,14 +61,28 @@ All settings are in `src/main/resources/application.properties`. The defaults wo
 
 ---
 
+## 🌐 Localization Note
+
+This app is tailored for personal use with a **Russian-first** approach:
+- **Russian titles** are the primary display name for every anime
+- **Genre tags** used in filters are in Russian (e.g. Фэнтези, Комедия, Романтика)
+- **Descriptions and Japanese romaji titles** are pulled from MAL in English
+- The auto-fill pipeline searches Shikimori (Russian anime database) first to get the correct title, then fetches full details from MyAnimeList — making Russian title lookup accurate even for obscure anime
+
+If you fork this for your own use, genres and UI labels can be swapped to any language in `app.js` (the `GENRES` array and `STATUS_CFG` object).
+
+---
+
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
+| Language | Java 17 |
 | Backend | Spring Boot 3, Spring Data JPA |
 | Database | H2 (file-based, embedded) |
 | Frontend | Vanilla JS, HTML5, CSS3 |
-| APIs | [Jikan v4](https://jikan.moe/) (MAL wrapper), [Shikimori](https://shikimori.one/api/doc) |
+| APIs | [Jikan v4](https://jikan.moe/) (MAL wrapper), [Shikimori](https://shikimori.one/api/doc), Google Translate (free proxy) |
+| Testing | JUnit 5, Mockito, MockMvc |
 | Build | Maven |
 
 ---
@@ -98,4 +112,4 @@ src/
 
 ## 📝 License
 
-Personal project — feel free to use or adapt.
+Personal use only — see [LICENSE](LICENSE) for details.
