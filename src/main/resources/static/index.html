@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Anime Tracker</title>
+  <link rel="stylesheet" href="/css/style.css?v=42"/>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="sticky-top">
+<header class="site-header">
+  <div class="header-left">
+    <span class="logo">🎌 Anime Tracker</span>
+  </div>
+  <div class="header-center">
+    <div class="search-wrap">
+      <input id="searchInput" type="text" placeholder="Search anime..." autocomplete="off"/>
+      <span class="search-icon">⌕</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <button id="addBtn" class="btn-primary">＋ Add Anime</button>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="tabs-row">
+  <button class="tab active" data-status="WATCHING">
+    <span class="tab-dot" style="background:#00B4D8"></span>
+    Watching <span class="tab-count" id="cnt-WATCHING">0</span>
+  </button>
+  <button class="tab" data-status="WILL_WATCH">
+    <span class="tab-dot" style="background:#F77F00"></span>
+    Will Watch <span class="tab-count" id="cnt-WILL_WATCH">0</span>
+  </button>
+  <button class="tab" data-status="WATCHED">
+    <span class="tab-dot" style="background:#4CAF50"></span>
+    Finished <span class="tab-count" id="cnt-WATCHED">0</span>
+  </button>
+  <button class="tab" data-status="FAVORITE">
+    <span class="tab-dot" style="background:#FFD60A"></span>
+    Favorite <span class="tab-count" id="cnt-FAVORITE">0</span>
+  </button>
+  <button class="tab" data-status="DROPPED">
+    <span class="tab-dot" style="background:#EF233C"></span>
+    Dropped <span class="tab-count" id="cnt-DROPPED">0</span>
+  </button>
+</nav>
+</div>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <span id="resultCount" class="result-count"></span>
+  <div class="toolbar-right">
+    <label for="sortSelect" class="sort-label">Sort:</label>
+    <select id="sortSelect">
+      <option value="date_desc" selected>Newest first</option>
+      <option value="date_asc">Oldest first</option>
+      <option value="name_asc">Name A–Z</option>
+      <option value="name_desc">Name Z–A</option>
+      <option value="rating_desc">Rating ↓</option>
+      <option value="rating_asc">Rating ↑</option>
+      <option value="episodes_desc">Most episodes</option>
+      <option value="episodes_asc">Least episodes</option>
+    </select>
+    <!-- Export -->
+    <div class="export-wrap" id="exportWrap">
+      <button class="btn-filter" id="exportBtn" onclick="toggleExportMenu()">↓ Export</button>
+      <div class="export-dropdown hidden" id="exportMenu">
+        <button onclick="exportList('csv');closeExportMenu()">CSV</button>
+        <button onclick="exportList('json');closeExportMenu()">JSON</button>
+        <button onclick="exportList('txt');closeExportMenu()">TXT</button>
+      </div>
+    </div>
+    <!-- Import -->
+    <button class="btn-filter" onclick="document.getElementById('importFileInput').click()">↑ Import</button>
+    <input type="file" id="importFileInput" accept=".csv,.txt,.json" style="display:none" onchange="importFromFile(this)"/>
+    <button id="filterToggleBtn" class="btn-filter" onclick="toggleFilter()">
+      <span id="filterIcon">⚙</span> Filters <span id="filterActiveDot" class="filter-active-dot hidden"></span>
+    </button>
+    <button id="noImageBtn" class="btn-filter" onclick="toggleNoImageFilter()" title="Show only anime without poster">No image</button>
+  </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="page-layout">
+
+  <!-- ANIME LIST -->
+  <div id="listArea" class="list-area">
+    <div class="loading-wrap"><div class="spinner"></div></div>
+  </div>
+
+  <!-- FILTER SIDEBAR -->
+  <aside id="filterSidebar" class="filter-sidebar hidden">
+
+    <!-- GENRES -->
+    <div class="filter-section">
+      <div class="filter-section-title">Жанры</div>
+      <div class="filter-section-sub">Показывать аниме с выбранными жанрами</div>
+      <div class="genre-dropdown-wrap" id="genreDropdownWrap">
+        <button class="genre-trigger" id="genreTrigger" onclick="toggleGenreDropdown()">
+          <span id="genreTriggerLabel">Укажите жанры</span>
+          <span id="genreTriggerArrow">▾</span>
+        </button>
+        <div id="genreDropdownList" class="genre-dropdown-list hidden"></div>
+      </div>
+    </div>
+
+    <!-- YEAR RANGE -->
+    <div class="filter-section">
+      <div class="filter-section-title">Период выхода</div>
+      <div class="year-range-row">
+        <div class="year-input-wrap">
+          <label>От</label>
+          <input type="number" id="filterYearFrom" min="1960" max="2030" value="1960" placeholder="1960"/>
+        </div>
+        <span class="year-dash">—</span>
+        <div class="year-input-wrap">
+          <label>До</label>
+          <input type="number" id="filterYearTo" min="1960" max="2030" value="2030" placeholder="2030"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIN RATING -->
+    <div class="filter-section">
+      <div class="filter-section-title">Минимальный рейтинг</div>
+      <div class="rating-filter-row">
+        <button class="rating-filter-btn active" data-rating="0">Все</button>
+        <button class="rating-filter-btn" data-rating="1">★+</button>
+        <button class="rating-filter-btn" data-rating="2">★★+</button>
+        <button class="rating-filter-btn" data-rating="3">★★★+</button>
+        <button class="rating-filter-btn" data-rating="4">★★★★+</button>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="filter-actions">
+      <button class="btn-apply" onclick="applyFilters()">✓ Применить</button>
+      <button class="btn-reset" onclick="resetFilters()">✕ Сбросить</button>
+    </div>
+
+  </aside>
+</div>
+
+<!-- ADD / EDIT MODAL -->
+<div id="editModal" class="modal-backdrop hidden">
+  <div class="edit-layout">
+
+    <!-- LEFT: Form panel -->
+    <div class="modal-box modal-wide">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add Anime</h2>
+        <button class="modal-close" onclick="closeModal('editModal')">✕</button>
+      </div>
+      <div id="dupeWarning" class="dupe-warning hidden">
+        ⚠️ <span id="dupeWarningText"></span>
+      </div>
+      <div class="form-grid">
+        <div class="form-image-col">
+          <div id="imgPreview" class="img-preview"><span>No image</span></div>
+          <div class="img-toggle">
+            <label><input type="radio" name="imgMode" value="url" checked onchange="setImgMode('url')"/> URL</label>
+            <label><input type="radio" name="imgMode" value="upload" onchange="setImgMode('upload')"/> Upload</label>
+          </div>
+          <div id="imgUrlWrap">
+            <input id="imgUrl" type="text" placeholder="Paste image URL…" oninput="previewUrl(this.value)"/>
+          </div>
+          <div id="imgUploadWrap" class="hidden">
+            <input id="imgFile" type="file" accept="image/*" onchange="previewFile(this)"/>
+          </div>
+        </div>
+        <div class="form-fields-col">
+          <div class="field-row">
+            <label>Russian Name *</label>
+            <input id="fRussianName" type="text" placeholder="Название на русском…"/>
+          </div>
+          <div class="field-row">
+            <label>Japanese Name <small>(romaji)</small></label>
+            <input id="fJapaneseName" type="text" placeholder="e.g. Shingeki no Kyojin"/>
+          </div>
+          <div class="field-row two-col">
+            <div>
+              <label>Status</label>
+              <select id="fStatus">
+                <option value="WATCHING">Watching</option>
+                <option value="WILL_WATCH">Will Watch</option>
+                <option value="WATCHED">Finished</option>
+                <option value="FAVORITE">Favorite</option>
+                <option value="DROPPED">Dropped</option>
+              </select>
+            </div>
+            <div>
+              <label>Year</label>
+              <input id="fYear" type="number" placeholder="2024" min="1960" max="2035"/>
+            </div>
+          </div>
+          <div class="field-row two-col">
+            <div>
+              <label>Episodes total</label>
+              <input id="fEpisodeCount" type="number" placeholder="12" min="1"/>
+            </div>
+            <div>
+              <label>Watched ep.</label>
+              <input id="fEpisodesWatched" type="number" placeholder="0" min="0"/>
+            </div>
+          </div>
+          <div class="field-row">
+            <label>Your Rating</label>
+            <div id="formStars" class="stars-interactive"></div>
+            <input id="fRating" type="hidden" value="0"/>
+          </div>
+        </div>
+      </div>
+      <!-- Full-width genres + description below the grid -->
+      <div class="form-full-width">
+        <div class="field-row">
+          <label>Genres</label>
+          <div id="genreGrid" class="genre-grid"></div>
+        </div>
+        <div class="field-row">
+          <label>Description</label>
+          <textarea id="fDescription" rows="6" placeholder="Description…"
+            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeModal('editModal')">Cancel</button>
+        <button class="btn-primary" onclick="saveAnime()">Save</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: MAL Search panel (Russian → Shikimori → MAL auto-routing) -->
+    <div class="mal-panel">
+      <div id="malSearchPanel">
+        <div class="jikan-row">
+          <input id="jikanInput" type="text" placeholder="Search anime (RU / EN / JP)…" autocomplete="off"/>
+          <button id="jikanBtn" class="btn-accent" onclick="doJikanSearch()">Search</button>
+        </div>
+        <div id="jikanResults" class="jikan-results hidden"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div id="detailModal" class="modal-backdrop hidden">
+  <div class="modal-box modal-detail">
+    <button class="modal-close" onclick="closeModal('detailModal')">✕</button>
+    <div class="detail-layout">
+      <div class="detail-poster-col">
+        <img id="detailImg" src="" alt="poster" class="detail-poster"/>
+        <div id="detailMalScore" class="mal-score hidden">
+          <span>⭐ MAL Score</span><strong id="detailMalScoreVal"></strong>
+        </div>
+        <div class="detail-move">
+          <label>Move to section</label>
+          <select id="detailMoveSelect">
+            <option value="WATCHING">Watching</option>
+            <option value="WILL_WATCH">Will Watch</option>
+            <option value="WATCHED">Finished</option>
+            <option value="FAVORITE">Favorite</option>
+            <option value="DROPPED">Dropped</option>
+          </select>
+          <button class="btn-accent full-width" onclick="applyMove()">↑ Move</button>
+        </div>
+        <button class="btn-ghost full-width" id="fetchMalBtn" onclick="fetchFromMAL()">↻ Fetch from MAL</button>
+      </div>
+      <div class="detail-info-col">
+        <h2 id="detailRussian" class="detail-title"></h2>
+        <p id="detailJapanese" class="detail-japanese"></p>
+        <div class="detail-meta-row">
+          <span id="detailStatusBadge" class="status-badge"></span>
+          <span id="detailYear" class="meta-chip"></span>
+          <span id="detailEpisodes" class="meta-chip"></span>
+        </div>
+        <div id="detailStars" class="detail-stars"></div>
+        <div id="detailGenres" class="detail-genres"></div>
+        <p id="detailSynopsis" class="detail-synopsis"></p>
+        <div id="malPickerWrap" class="mal-picker-wrap hidden"></div>
+        <div class="detail-actions">
+          <button class="btn-primary" id="detailEditBtn">✎ Edit</button>
+          <button class="btn-danger" id="detailDeleteBtn">🗑 Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM -->
+<div id="confirmDialog" class="modal-backdrop hidden">
+  <div class="modal-box modal-sm">
+    <p id="confirmMsg" style="color:var(--text);font-size:.95rem;margin-bottom:1.4rem;"></p>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeModal('confirmDialog')">Cancel</button>
+      <button class="btn-danger" id="confirmOkBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/js/app.js?v=50"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# ── Build output ──────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+
+# ── Database (personal data — never commit) ───────────────
+data/
+*.mv.db
+*.trace.db
+
+# ── Uploaded images (personal data) ──────────────────────
+uploads/
+
+# ── Launcher scripts (documented in README instead) ───────
+*.bat
+*.sh
+*.ps1
+*.vbs
+
+# ── Import/migration scripts (one-time use) ───────────────
+import_anime.py
+
+# ── IDE / OS ──────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ── Maven wrapper (optional) ──────────────────────────────
+# .mvn/
+# mvnw
+# mvnw.cmd
+
+# ── Environment / secrets ─────────────────────────────────
+.env
+*.env
