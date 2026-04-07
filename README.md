@@ -9,6 +9,22 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 
 ---
 
+## 📸 Screenshots
+
+### **Main list view:**
+
+<img width="600" alt="Main list view" src="https://github.com/user-attachments/assets/4dc53672-f268-4d00-b025-fbee23431159" />
+
+### **Detail modal:**
+
+<img width="350" alt="Detail modal" src="https://github.com/user-attachments/assets/cc4eb9de-a215-4e4d-83ef-f9161f9aa479" />
+
+### **Edit modal with MAL search:**
+
+<img width="450" alt="Edit modal" src="https://github.com/user-attachments/assets/2e813210-10f2-4e71-a8aa-f41ebe95de32" />
+
+---
+
 ## ✨ Features
 
 - **5 sections** — Watching, Will Watch, Finished, Favorite, Dropped
