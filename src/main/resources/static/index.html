@@ -29,23 +29,23 @@
 <nav class="tabs-row">
   <button class="tab active" data-status="WATCHING">
     <span class="tab-dot" style="background:#00B4D8"></span>
-    Watching <span class="tab-count" id="cnt-WATCHING">0</span>
+    Watching <span class="tab-count" data-status="WATCHING">0</span>
   </button>
   <button class="tab" data-status="WILL_WATCH">
     <span class="tab-dot" style="background:#F77F00"></span>
-    Will Watch <span class="tab-count" id="cnt-WILL_WATCH">0</span>
+    Will Watch <span class="tab-count" data-status="WILL_WATCH">0</span>
   </button>
   <button class="tab" data-status="WATCHED">
     <span class="tab-dot" style="background:#4CAF50"></span>
-    Finished <span class="tab-count" id="cnt-WATCHED">0</span>
+    Finished <span class="tab-count" data-status="WATCHED">0</span>
   </button>
   <button class="tab" data-status="FAVORITE">
     <span class="tab-dot" style="background:#FFD60A"></span>
-    Favorite <span class="tab-count" id="cnt-FAVORITE">0</span>
+    Favorite <span class="tab-count" data-status="FAVORITE">0</span>
   </button>
   <button class="tab" data-status="DROPPED">
     <span class="tab-dot" style="background:#EF233C"></span>
-    Dropped <span class="tab-count" id="cnt-DROPPED">0</span>
+    Dropped <span class="tab-count" data-status="DROPPED">0</span>
   </button>
 </nav>
 </div>
@@ -69,9 +69,9 @@
     <div class="export-wrap" id="exportWrap">
       <button class="btn-filter" id="exportBtn" onclick="toggleExportMenu()">↓ Export</button>
       <div class="export-dropdown hidden" id="exportMenu">
-        <button onclick="exportList('csv');closeExportMenu()">CSV</button>
-        <button onclick="exportList('json');closeExportMenu()">JSON</button>
-        <button onclick="exportList('txt');closeExportMenu()">TXT</button>
+        <button onclick="exportList('csv')">CSV</button>
+        <button onclick="exportList('json')">JSON</button>
+        <button onclick="exportList('txt')">TXT</button>
       </div>
     </div>
     <!-- Import -->
@@ -145,6 +145,9 @@
   </aside>
 </div>
 
+<!-- INFINITE SCROLL SENTINEL -->
+<div id="sentinelItem" style="height:1px"></div>
+
 <!-- ADD / EDIT MODAL -->
 <div id="editModal" class="modal-backdrop hidden">
   <div class="edit-layout">
@@ -152,7 +155,7 @@
     <!-- LEFT: Form panel -->
     <div class="modal-box modal-wide">
       <div class="modal-header">
-        <h2 id="modalTitle">Add Anime</h2>
+        <h2 id="editModalTitle">Add Anime</h2>
         <button class="modal-close" onclick="closeModal('editModal')">✕</button>
       </div>
       <div id="dupeWarning" class="dupe-warning hidden">
@@ -160,7 +163,7 @@
       </div>
       <div class="form-grid">
         <div class="form-image-col">
-          <div id="imgPreview" class="img-preview"><span>No image</span></div>
+          <img id="imgPreview" src="" alt="" class="img-preview" style="display:none"/>
           <div class="img-toggle">
             <label><input type="radio" name="imgMode" value="url" checked onchange="setImgMode('url')"/> URL</label>
             <label><input type="radio" name="imgMode" value="upload" onchange="setImgMode('upload')"/> Upload</label>
@@ -208,7 +211,7 @@
             </div>
           </div>
           <div class="field-row">
-            <label>Your Rating</label>
+            <label>Your Rating <small style="color:var(--muted);">(click left/right half of star)</small></label>
             <div id="formStars" class="stars-interactive"></div>
             <input id="fRating" type="hidden" value="0"/>
           </div>
@@ -237,7 +240,7 @@
       <div id="malSearchPanel">
         <div class="jikan-row">
           <input id="jikanInput" type="text" placeholder="Search anime (RU / EN / JP)…" autocomplete="off"/>
-          <button id="jikanBtn" class="btn-accent" onclick="doJikanSearch()">Search</button>
+          <button id="jikanBtn" class="btn-accent" onclick="doJikanSearch()">Search MAL</button>
         </div>
         <div id="jikanResults" class="jikan-results hidden"></div>
       </div>
@@ -268,6 +271,8 @@
           <button class="btn-accent full-width" onclick="applyMove()">↑ Move</button>
         </div>
         <button class="btn-ghost full-width" id="fetchMalBtn" onclick="fetchFromMAL()">↻ Fetch from MAL</button>
+        <!-- ═══ FAVORITE TOGGLE BUTTON ═══ -->
+        <button class="btn-accent" id="detailFavoriteBtn">☆ Add to Favorites</button>
       </div>
       <div class="detail-info-col">
         <h2 id="detailRussian" class="detail-title"></h2>
@@ -303,6 +308,6 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="/js/app.js?v=50"></script>
+<script src="/js/app.js?v=51"></script>
 </body>
 </html>

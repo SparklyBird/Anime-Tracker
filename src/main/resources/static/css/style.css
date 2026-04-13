@@ -335,7 +335,7 @@ body {
 .modal-close:hover { color: var(--text); background: var(--border); }
 .modal-footer {
   display: flex; justify-content: flex-end; gap: .6rem;
-  padding: .9rem 1.5rem; border-top: 1px solid var(--border);
+  padding: .9rem 1.5rem;
 }
 .modal-divider { height: 1px; background: var(--border); margin: .2rem 0; }
 
@@ -552,3 +552,88 @@ input[type=file] { color: var(--text2); padding: .3rem; }
 .toast.success { border-left: 3px solid #4CAF50; }
 .toast.error   { border-left: 3px solid var(--accent); }
 .hidden { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════
+   NEW ADDITIONS FOR v1.1.0
+   - Grouped search separators
+   - Favorite toggle button styles
+   ═══════════════════════════════════════════════════════ */
+
+/* Search Group Separator */
+.search-group-separator {
+  margin: 1.5rem 0 1.2rem 0;
+  padding: 0;
+}
+
+.search-group-separator:first-child {
+  margin-top: 1.2rem;
+}
+
+.search-group-separator h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 0.6rem 0;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* Status-based colors for separators */
+.search-group-separator.status-WATCHING h3 {
+  color: #00B4D8;
+  background: rgba(0, 180, 216, 0.1);
+  border-left: 3px solid #00B4D8;
+}
+
+.search-group-separator.status-WATCHED h3 {
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.1);
+  border-left: 3px solid #4CAF50;
+}
+
+.search-group-separator.status-WILL_WATCH h3 {
+  color: #F77F00;
+  background: rgba(247, 127, 0, 0.1);
+  border-left: 3px solid #F77F00;
+}
+
+.search-group-separator.status-FAVORITE h3 {
+  color: #FFD60A;
+  background: rgba(255, 214, 10, 0.1);
+  border-left: 3px solid #FFD60A;
+}
+
+.search-group-separator.status-DROPPED h3 {
+  color: #EF233C;
+  background: rgba(239, 35, 60, 0.1);
+  border-left: 3px solid #EF233C;
+}
+
+.search-group-separator hr {
+  display: none;
+}
+
+/* Warning button style for Remove from Favorites - Dark theme with yellow star */
+.btn-warning {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+}
+
+.btn-warning:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.btn-warning:active {
+  transform: translateY(0);
+}

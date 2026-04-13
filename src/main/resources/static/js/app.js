@@ -1,5 +1,6 @@
 /* ============================================================
    ANIME TRACKER v3 — app.js
+   UPDATED WITH: Favorite toggle, Rating sync, Grouped search
    ============================================================ */
 
 const STATUS_CFG = {
@@ -75,6 +76,12 @@ const GENRE_MAP = {
 const S = { status:'WATCHING', sort:'date_desc', query:'', list:[], editingId:null, detailId:null, selectedRating:0, noImageOnly:false };
 const F = { genres:new Set(), yearFrom:1960, yearTo:2030, minRating:0, active:false };
 
+// ─── PAGINATION STATE ──────────────────────────────────────
+let S_page = 0;
+let S_loading = false;
+let S_lastPage = false;
+const PAGE_SIZE = 50;
+
 // ─── INIT ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   buildGenreGrid();
@@ -98,164 +105,93 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // Rating filter buttons
   document.querySelectorAll('.rating-filter-btn').forEach(btn =>
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', e => {
       document.querySelectorAll('.rating-filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      F.minRating = parseFloat(btn.dataset.rating);
-    }));
+      e.target.classList.add('active');
+      F.minRating = parseInt(e.target.dataset.rating);
+      applyFilters();
+    })
+  );
   loadCounts();
-  loadSection(localStorage.getItem('activeTab') || 'WATCHING');
+  loadSection(S.status);
 });
 
-// ─── API ──────────────────────────────────────────────────
-async function api(method, path, body) {
-  const opts = { method, headers:{} };
-  if (body) { opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
-  console.log(`[API] ${method} ${path}`, body||'');
-  const res = await fetch(path, opts);
-  if (!res.ok) {
-    const errText = await res.text().catch(()=>'(no body)');
-    console.error(`[API] ${method} ${path} → HTTP ${res.status}:`, errText);
-    throw new Error(`HTTP ${res.status}: ${errText.substring(0,300)}`);
-  }
-  if (res.status===204) return null;
-  const data = await res.json();
-  console.log(`[API] ${method} ${path} → OK`, data);
-  return data;
+// ─── TABS ─────────────────────────────────────────────────
+function setupTabs() {
+  document.querySelectorAll('.tab').forEach(btn =>
+    btn.addEventListener('click', () => switchTab(btn.dataset.status)));
 }
 
-// ─── SECTION LOADING ──────────────────────────────────────
-const PAGE_SIZE = 50;
-let S_page = 0;
-let S_loading = false;
-let S_lastPage = false;
-
-async function loadSection(status) {
+function switchTab(status) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.tab[data-status="${status}"]`)?.classList.add('active');
   S.status = status; S.query = ''; S_page = 0; S_loading = false; S_lastPage = false;
-  localStorage.setItem('activeTab', status);
-  document.getElementById('searchInput').value = '';
-  updateActiveTab(status);
   S.list = [];
-  document.getElementById('listArea').innerHTML = '';
-  document.getElementById('resultCount').textContent = '';
-  await fetchNextPage();
-}
-
-async function fetchNextPage() {
-  if (S_loading || S_lastPage) return;
-  S_loading = true;
-  showPageLoader(true);
-  try {
-    const data = await api('GET', `/api/anime?status=${S.status}&page=${S_page}&size=${PAGE_SIZE}`);
-    const items = data.content || [];
-    S_lastPage = data.last;
-    S.list = [...S.list, ...items];
-    S_page++;
-    appendItems(items, data.totalElements);
-  } catch { showError('Failed to load'); }
-  finally {
-    S_loading = false;
-    showPageLoader(false);
-    // After each page loads, immediately check if sentinel is still visible → keep going
-    if (!S_lastPage) setTimeout(checkSentinel, 150);
-  }
-}
-
-function checkSentinel() {
-  if (S_loading || S_lastPage) return;
-  const sentinel = document.getElementById('scroll-sentinel');
-  if (!sentinel) return;
-  const rect = sentinel.getBoundingClientRect();
-  if (rect.top < window.innerHeight + 800) fetchNextPage();
-}
-
-function showPageLoader(show) {
-  let el = document.getElementById('page-loader');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'page-loader';
-    el.innerHTML = '<div class="loader-spinner"></div><span id="loader-text">Loading...</span>';
-    document.getElementById('listArea').after(el);
-  }
-  el.style.display = show ? 'flex' : 'none';
-}
-
-function appendItems(items, total) {
-  const area = document.getElementById('listArea');
-  document.getElementById('resultCount').textContent = `${total} anime`;
-  if (!items.length && S_page === 1) {
-    area.innerHTML = '<div class="empty-state"><div class="empty-icon">🎌</div><p>No anime here yet</p></div>';
-    return;
-  }
-  const old = document.getElementById('scroll-sentinel');
-  if (old) old.remove();
-  const frag = document.createDocumentFragment();
-  items.forEach(a => frag.appendChild(createItem(a)));
-  area.appendChild(frag);
-  if (!S_lastPage) {
-    const sentinel = document.createElement('div');
-    sentinel.id = 'scroll-sentinel';
-    sentinel.style.height = '1px';
-    area.appendChild(sentinel);
-    scrollObserver.observe(sentinel);
-  }
-}
-
-const scrollObserver = new IntersectionObserver(entries => {
-  if (entries[0].isIntersecting) {
-    scrollObserver.disconnect();
-    fetchNextPage();
-  }
-}, { rootMargin: '600px' });
-
-// Scroll fallback — fires when user is within 600px of bottom
-window.addEventListener('scroll', () => {
-  if (S_loading || S_lastPage) return;
-  const sentinel = document.getElementById('scroll-sentinel');
-  if (!sentinel) return;
-  const rect = sentinel.getBoundingClientRect();
-  if (rect.top < window.innerHeight + 600) {
-    fetchNextPage();
-  }
-}, { passive: true });
-
-// Refresh without losing scroll — refetch current pages
-async function refreshList() {
-  const scrollY = window.scrollY;
-  const pagesLoaded = S_page;
-  S.list = []; S_page = 0; S_loading = false; S_lastPage = false;
-  document.getElementById('listArea').innerHTML = '';
-  // Re-fetch all pages that were loaded
-  for (let i = 0; i < pagesLoaded; i++) {
-    if (S_lastPage) break;
-    S_loading = true;
-    try {
-      const data = await api('GET', `/api/anime?status=${S.status}&page=${S_page}&size=${PAGE_SIZE}`);
-      const items = data.content || [];
-      S_lastPage = data.last;
-      S.list = [...S.list, ...items];
-      S_page++;
-      appendItems(items, data.totalElements);
-    } catch {} finally { S_loading = false; }
-  }
-  showPageLoader(false);
-  requestAnimationFrame(() => window.scrollTo(0, scrollY));
+  document.getElementById('searchInput').value = '';
+  loadSection(status);
 }
 
 async function loadCounts() {
   try {
-    const c = await api('GET','/api/anime/counts');
-    Object.entries(c).forEach(([k,v]) => { const el=document.getElementById(`cnt-${k}`); if(el) el.textContent=v; });
+    const c = await api('GET', '/api/anime/counts');
+    Object.keys(c).forEach(status => {
+      const el = document.querySelector(`.tab-count[data-status="${status}"]`);
+      if (el) el.textContent = c[status];
+    });
   } catch {}
 }
 
-// ─── TABS ─────────────────────────────────────────────────
-function setupTabs() {
-  document.querySelectorAll('.tab').forEach(t =>
-    t.addEventListener('click', () => loadSection(t.dataset.status)));
+async function loadSection(status, append = false) {
+  if (S_loading || S_lastPage) return;
+  S_loading = true;
+  showLoading();
+  try {
+    const data = await api('GET', `/api/anime?status=${status}&page=${S_page}&size=${PAGE_SIZE}`);
+    if (append) {
+      S.list = [...S.list, ...data.content];
+      const frag = document.createDocumentFragment();
+      data.content.forEach(a => frag.appendChild(createItem(a)));
+      document.getElementById('listArea').appendChild(frag);
+    } else {
+      S.list = data.content;
+      render();
+    }
+    S_page = data.page + 1;
+    S_lastPage = data.last;
+    S_loading = false;
+  } catch (e) {
+    S_loading = false;
+    showError('Issue loading anime: ' + (e.message || 'Server error'));
+  }
 }
-function updateActiveTab(s) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.status===s));
+
+async function refreshList() {
+  S.list = []; S_page = 0; S_loading = false; S_lastPage = false;
+  if (S.query) {
+    searchMode(S.query);
+  } else {
+    loadSection(S.status);
+  }
+}
+
+// Infinite scroll
+const obs = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting && !S.query && !S_loading && !S_lastPage) {
+    loadSection(S.status, true);
+  }
+}, { rootMargin: '200px' });
+window.addEventListener('load', () => {
+  const sentinel = document.getElementById('sentinelItem');
+  if (sentinel) obs.observe(sentinel);
+});
+
+// ─── API ──────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(res.statusText);
+  return res.json();
 }
 
 // ─── SEARCH ───────────────────────────────────────────────
@@ -266,8 +202,12 @@ function setupSearch() {
     clearTimeout(t);
     t = setTimeout(() => {
       if (S.query) {
-        // Search across ALL entries in current section via backend
-        searchMode(S.query);
+        // Search with grouped results if NOT in Favorites tab
+        if (S.status !== 'FAVORITE') {
+          searchModeGrouped(S.query);
+        } else {
+          searchMode(S.query);
+        }
       } else {
         // Back to normal paginated view
         S.list = []; S_page = 0; S_loading = false; S_lastPage = false;
@@ -369,6 +309,7 @@ function filterList(list) {
   });
 }
 
+// ─── SEARCH MODE (single section) ─────────────────────────
 async function searchMode(q) {
   showLoading();
   try {
@@ -384,7 +325,60 @@ async function searchMode(q) {
     const frag = document.createDocumentFragment();
     filterList(results).forEach(a => frag.appendChild(createItem(a)));
     area.appendChild(frag);
-  } catch { showError('Search failed'); }
+  } catch (e) { 
+    showError('Search issue: ' + (e.message || 'Try again')); 
+  }
+}
+
+// ─── SEARCH MODE GROUPED (all sections except FAVORITE) ────
+async function searchModeGrouped(q) {
+  showLoading();
+  try {
+    // Search across all statuses
+    const allResults = await api('GET', `/api/anime/search?q=${encodeURIComponent(q)}`);
+    
+    // Group by status (excluding FAVORITE from grouping)
+    const grouped = {};
+    const statuses = ['WATCHED', 'WATCHING', 'WILL_WATCH', 'DROPPED'];
+    statuses.forEach(st => { grouped[st] = []; });
+    
+    allResults.forEach(anime => {
+      if (anime.status !== 'FAVORITE' && grouped[anime.status]) {
+        grouped[anime.status].push(anime);
+      }
+    });
+    
+    // Remove empty groups
+    const nonEmptyGroups = statuses.filter(st => grouped[st].length > 0);
+    
+    const area = document.getElementById('listArea');
+    const totalCount = nonEmptyGroups.reduce((sum, st) => sum + grouped[st].length, 0);
+    document.getElementById('resultCount').textContent = `${totalCount} anime`;
+    
+    if (totalCount === 0) {
+      area.innerHTML = '<div class="empty-state"><div class="empty-icon">🎌</div><p>No results</p></div>';
+      return;
+    }
+    
+    area.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    
+    nonEmptyGroups.forEach((status, idx) => {
+      // Add separator with status label and color
+      const separator = document.createElement('div');
+      separator.className = `search-group-separator status-${status}`;
+      separator.innerHTML = `<h3>${STATUS_CFG[status].label}</h3><hr>`;
+      frag.appendChild(separator);
+      
+      // Add anime items for this group
+      filterList(grouped[status]).forEach(a => frag.appendChild(createItem(a)));
+    });
+    
+    area.appendChild(frag);
+    S.list = allResults.filter(a => a.status !== 'FAVORITE'); // Store for filtering
+  } catch (e) { 
+    showError('Search issue: ' + (e.message || 'Try again')); 
+  }
 }
 
 // ─── RENDER ───────────────────────────────────────────────
@@ -448,54 +442,54 @@ function createItem(anime) {
     <div class="item-actions">
       <button class="item-act autofill" onclick="event.stopPropagation();quickAutoFill(${anime.id},this)">⚡</button>
       <button class="item-act" onclick="event.stopPropagation();openEditModalById(${anime.id})">✎ Edit</button>
-      <button class="item-act danger" onclick="event.stopPropagation();confirmDelete(${anime.id},'${esc(anime.russianName).replace(/'/g,"\\'")}')">🗑</button>
-    </div>`;
-
-  el.addEventListener('click', () => openDetailModal(anime.id));
+    </div>
+  `;
+  el.onclick=()=>openDetailModal(anime.id);
   return el;
 }
 
-// ─── ADD / EDIT MODAL ─────────────────────────────────────
+// ─── MODALS ───────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
 function openAddModal() {
-  S.editingId=null; S.selectedRating=0;
-  document.getElementById('modalTitle').textContent='Add Anime';
-  clearForm(); document.getElementById('fStatus').value=S.status;
-  updateInteractiveStars(0); clearJikan(); openModal('editModal');
+  S.editingId=null; clearForm(); clearJikan();
+  document.getElementById('editModalTitle').textContent='Add Anime';
+  document.getElementById('fStatus').value=S.status;
+  document.getElementById('dupeWarning').classList.add('hidden');
+  openModal('editModal');
 }
 
 async function openEditModalById(id) {
-  console.log('[Edit] openEditModalById id=', id);
   try {
-    const anime = await api('GET', `/api/anime/${id}`);
-    console.log('[Edit] loaded anime:', anime);
+    const anime=await api('GET',`/api/anime/${id}`);
     openEditModal(anime);
-  } catch(e) {
-    console.error('[Edit] FAILED:', e);
-    showError('Load failed: ' + e.message);
+  } catch (e) { 
+    showError('Issue loading anime: ' + (e.message || 'Not found')); 
   }
 }
 
 function openEditModal(anime) {
-  S.editingId=anime.id; S.selectedRating=anime.rating||0;
-  document.getElementById('modalTitle').textContent='Edit Anime';
-  clearJikan();
-  document.getElementById('fRussianName').value     = anime.russianName||'';
-  document.getElementById('fJapaneseName').value    = anime.japaneseName||'';
-  document.getElementById('fStatus').value          = anime.status;
-  document.getElementById('fYear').value            = anime.year||'';
-  document.getElementById('fEpisodeCount').value    = anime.episodeCount||'';
-  document.getElementById('fEpisodesWatched').value = anime.episodesWatched||'';
-  document.getElementById('fDescription').value     = anime.description||'';
-  document.getElementById('fRating').value          = anime.rating||0;
-  document.querySelectorAll('.genre-cb').forEach(cb=>{ cb.checked=(anime.genres||[]).includes(cb.value); });
-  if (anime.imagePath) { setImgMode('url'); document.getElementById('imgUrl').value=anime.imagePath; previewUrl(anime.imagePath); }
-  else clearImgPreview();
-  updateInteractiveStars(anime.rating||0);
+  S.editingId=anime.id; clearJikan();
+  document.getElementById('editModalTitle').textContent='Edit Anime';
+  document.getElementById('fRussianName').value=anime.russianName||'';
+  document.getElementById('fJapaneseName').value=anime.japaneseName||'';
+  document.getElementById('fStatus').value=anime.status;
+  document.getElementById('fYear').value=anime.year||'';
+  document.getElementById('fEpisodeCount').value=anime.episodeCount||'';
+  document.getElementById('fEpisodesWatched').value=anime.episodesWatched||'';
+  document.getElementById('fDescription').value=anime.description||'';
+  document.getElementById('fRating').value=anime.rating||0;
+  S.selectedRating = anime.rating || 0;
+  renderFormStars();
+  document.querySelectorAll('.genre-cb').forEach(c=>c.checked=(anime.genres||[]).includes(c.value));
+  if (anime.imagePath) {
+    if (anime.imagePath.startsWith('http') || anime.imagePath.startsWith('/uploads/')) {
+      setImgMode('url'); document.getElementById('imgUrl').value=anime.imagePath; previewUrl(anime.imagePath);
+    }
+  } else { clearImgPreview(); setImgMode('url'); }
+  document.getElementById('dupeWarning').classList.add('hidden');
   openModal('editModal');
-  // Resize textarea AFTER modal is visible so scrollHeight is calculated correctly
-  const ta = document.getElementById('fDescription');
-  ta.style.height = 'auto';
-  requestAnimationFrame(() => { ta.style.height = ta.scrollHeight + 'px'; });
 }
 
 async function saveAnime() {
@@ -548,11 +542,13 @@ async function performSave() {
   const name = document.getElementById('fRussianName').value.trim();
   const imgMode = document.querySelector('input[name=imgMode]:checked')?.value;
   const imgUrl  = document.getElementById('imgUrl').value.trim();
+  const newRating = parseFloat(document.getElementById('fRating').value) || null;
+  
   const body = {
     russianName:     name,
     japaneseName:    document.getElementById('fJapaneseName').value.trim() || null,
     status:          document.getElementById('fStatus').value,
-    rating:          parseFloat(document.getElementById('fRating').value) || null,
+    rating:          newRating,
     genres:          [...document.querySelectorAll('.genre-cb:checked')].map(c => c.value),
     year:            parseInt(document.getElementById('fYear').value) || null,
     episodeCount:    parseInt(document.getElementById('fEpisodeCount').value) || null,
@@ -560,14 +556,38 @@ async function performSave() {
     description:     document.getElementById('fDescription').value.trim() || null,
     imagePath:       (imgMode === 'url' && imgUrl) ? imgUrl : null,
   };
+  
   try {
     let saved = S.editingId
       ? await api('PUT', `/api/anime/${S.editingId}`, body)
       : await api('POST', '/api/anime', body);
+      
     if (imgMode === 'upload') {
       const file = document.getElementById('imgFile').files[0];
       if (file) await uploadImage(saved.id, file);
     }
+    
+    // ═══ RATING SYNC: Update FAVORITE entry if it exists ═══
+    if (S.editingId && newRating !== null) {
+      try {
+        const allMatches = await api('GET', `/api/anime/search?q=${encodeURIComponent(name)}`);
+        const favoriteEntry = allMatches.find(a => 
+          a.status === 'FAVORITE' && 
+          a.russianName.toLowerCase() === name.toLowerCase() &&
+          a.id !== S.editingId
+        );
+        
+        if (favoriteEntry && favoriteEntry.rating !== newRating) {
+          await api('PUT', `/api/anime/${favoriteEntry.id}`, {
+            ...buildBody(favoriteEntry),
+            rating: newRating
+          });
+        }
+      } catch (e) {
+        console.error('Failed to sync rating to favorite:', e);
+      }
+    }
+    
     closeModal('editModal');
     showToast(S.editingId ? 'Updated!' : 'Added!', 'success');
     await Promise.all([loadCounts(), refreshList()]);
@@ -598,80 +618,137 @@ function setImgMode(mode) {
   document.getElementById('imgUploadWrap').classList.toggle('hidden',mode!=='upload');
 }
 function previewUrl(url) {
-  document.getElementById('imgPreview').innerHTML=url
-    ?`<img src="${esc(url)}" alt="" onerror="this.parentNode.innerHTML='<span>Bad URL</span>'">`
-    :'<span>No image</span>';
+  const p=document.getElementById('imgPreview');
+  p.src=url; p.style.display='block';
+  document.getElementById('imgFile').value='';
 }
 function previewFile(input) {
-  const f=input.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=e=>{ document.getElementById('imgPreview').innerHTML=`<img src="${e.target.result}" alt="">`; };
-  r.readAsDataURL(f);
+  const file=input.files[0];
+  if(!file) return;
+  const url=URL.createObjectURL(file);
+  const p=document.getElementById('imgPreview');
+  p.src=url; p.style.display='block';
+  document.getElementById('imgUrl').value='';
 }
-function clearImgPreview() { document.getElementById('imgPreview').innerHTML='<span>No image</span>'; }
+function clearImgPreview() {
+  const p=document.getElementById('imgPreview');
+  p.src=''; p.style.display='none';
+}
 
-// ─── GENRE GRID (form) ────────────────────────────────────
 function buildGenreGrid() {
-  document.getElementById('genreGrid').innerHTML=GENRES.map(g=>{
-    const id='g_'+g.replace(/\s/g,'_');
-    const tip = GENRE_TIPS[g] ? ` title="${GENRE_TIPS[g]}"` : '';
-    return `<input type="checkbox" class="genre-cb" id="${id}" value="${g}"><label class="genre-label" for="${id}"${tip}>${g}</label>`;
+  const grid=document.getElementById('genreGrid');
+  grid.innerHTML=GENRES.map(g=>{
+    const tip=GENRE_TIPS[g]||'';
+    return `<div class="genre-item" title="${esc(tip)}">
+      <input type="checkbox" id="g_${g.replace(/\s/g,'_')}" class="genre-cb" value="${g}">
+      <label for="g_${g.replace(/\s/g,'_')}">${g}</label>
+    </div>`;
   }).join('');
 }
 
-// ─── INTERACTIVE STARS ────────────────────────────────────
 function buildInteractiveStars() {
-  const c=document.getElementById('formStars'); c.innerHTML='';
-  for(let i=1;i<=5;i++) {
-    const s=document.createElement('span');
-    s.className='si-star'; s.textContent='★';
-    s.addEventListener('mousemove',e=>{
-      const rect=s.getBoundingClientRect();
-      lightStars(i - ((e.clientX-rect.left)<rect.width/2 ? 0.5 : 0));
-    });
-    s.addEventListener('click',e=>{
-      const rect=s.getBoundingClientRect();
-      const val=i - ((e.clientX-rect.left)<rect.width/2 ? 0.5 : 0);
-      S.selectedRating=val; document.getElementById('fRating').value=val;
-      updateInteractiveStars(val);
-    });
-    c.appendChild(s);
+  const box = document.getElementById('formStars');
+  box.innerHTML = '';
+  
+  for(let i=1; i<=5; i++) {
+    const s = document.createElement('span');
+    s.style.cssText = 'font-size:1.6rem;cursor:pointer;transition:all 0.15s;user-select:none;display:inline-block;';
+    s.textContent = '☆';
+    s.dataset.starIndex = i;
+    box.appendChild(s);
   }
-  c.addEventListener('mouseleave',()=>updateInteractiveStars(S.selectedRating));
-}
-function lightStars(val) {
-  document.querySelectorAll('.si-star').forEach((s,idx)=>{
-    const pos=idx+1;
-    s.classList.remove('lit','half-lit');
-    if(val>=pos) s.classList.add('lit');
-    else if(val>=pos-0.5) s.classList.add('half-lit');
+  
+  attachStarListeners();
+  
+  box.addEventListener('mouseleave', () => {
+    renderFormStars();
+    Array.from(box.children).forEach(s => s.style.transform = 'scale(1)');
   });
 }
-function updateInteractiveStars(val) { S.selectedRating=val; lightStars(val); }
 
-// ─── JIKAN ────────────────────────────────────────────────
-function clearJikan() {
-  document.getElementById('jikanInput').value='';
-  document.getElementById('jikanResults').innerHTML='';
-  document.getElementById('jikanResults').classList.add('hidden');
-  S._russianQuery = null;
+function attachStarListeners() {
+  const box = document.getElementById('formStars');
+  
+  Array.from(box.children).forEach((s, idx) => {
+    const i = idx + 1;
+    
+    // Remove old listeners by cloning
+    const newStar = s.cloneNode(true);
+    s.parentNode.replaceChild(newStar, s);
+    
+    // Click - detect which half was clicked
+    newStar.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Check if clicked on left or right half
+      const rect = newStar.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const isLeftHalf = clickX < rect.width / 2;
+      
+      S.selectedRating = isLeftHalf ? (i - 0.5) : i;
+      document.getElementById('fRating').value = S.selectedRating;
+      renderFormStars();
+    });
+    
+    // Hover effect
+    newStar.addEventListener('mouseenter', () => {
+      const box = document.getElementById('formStars');
+      for(let j=0; j<5; j++) {
+        if (box.children[j]) {
+          box.children[j].style.color = (j < i) ? 'var(--star)' : 'var(--star-e)';
+          box.children[j].style.transform = (j < i) ? 'scale(1.15)' : 'scale(1)';
+        }
+      }
+    });
+  });
 }
 
+function renderFormStars() {
+  const r = S.selectedRating;
+  const box = document.getElementById('formStars');
+  
+  Array.from(box.children).forEach((s, i) => {
+    const val = i + 1;
+    
+    // Clear any inline HTML
+    s.style.color = '';
+    
+    if (r >= val) {
+      s.textContent = '★';
+      s.style.color = 'var(--star)';
+    } else if (r >= val - 0.5) {
+      // Half star using background gradient trick
+      s.innerHTML = '<span style="position:relative;display:inline-block;color:var(--star-e);">☆<span style="position:absolute;left:0;top:0;width:50%;overflow:hidden;color:var(--star);">★</span></span>';
+    } else {
+      s.textContent = '☆';
+      s.style.color = 'var(--star-e)';
+    }
+  });
+  
+  // Re-attach listeners after innerHTML changes
+  attachStarListeners();
+}
 
-function isCyrillic(text) { return /[а-яёА-ЯЁ]/.test(text); }
+// ─── JIKAN (MAL) ──────────────────────────────────────────
+function clearJikan() {
+  document.getElementById('jikanInput').value='';
+  document.getElementById('jikanResults').classList.add('hidden');
+  document.getElementById('jikanResults').innerHTML='';
+  S._russianQuery=null;
+}
+
+function isCyrillic(text) {
+  return /[а-яё]/i.test(text);
+}
 
 async function translateRuToEn(text) {
   try {
-    console.log('[Translate] ru→en:', text);
-    const res = await fetch(`/api/jikan/translate?q=${encodeURIComponent(text)}&sl=ru&tl=en`);
+    const res = await fetch(`/api/jikan/translate?q=${encodeURIComponent(text)}&langpair=ru|en`);
     const data = await res.json();
     const translated = data.responseData?.translatedText;
-    console.log('[Translate] result:', translated);
-    return (translated && translated.toLowerCase() !== text.toLowerCase()) ? translated : text;
-  } catch(e) {
-    console.error('[Translate] failed:', e);
-    return text;
-  }
+    return (translated && translated !== text && !/МАМА МИА/i.test(translated)) ? translated : text;
+  } catch { return text; }
 }
 
 async function doJikanSearch() {
@@ -680,23 +757,17 @@ async function doJikanSearch() {
   const btn = document.getElementById('jikanBtn');
   btn.disabled = true;
 
-  S._russianQuery = null;
-
   if (isCyrillic(rawQ)) {
-    S._russianQuery = rawQ;
-    btn.textContent = 'Shikimori…';
-
     try {
       // Step 1: search Shikimori with Russian query → get official Russian title + romaji name
-      const shikiRes = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(rawQ)}`);
-      const shikiItems = await shikiRes.json();
-
+      btn.textContent = '↻ Shikimori…';
+      const shikiResult = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(rawQ)}`).then(r => r.json());
       let searchTerm = rawQ;  // fallback
-      let shikiMalId = null;  // MAL ID from Shikimori — pin this to top of results
-      if (shikiItems && shikiItems.length > 0) {
-        const best = shikiItems[0];
-        if (best.russian && best.russian !== best.name) S._russianQuery = best.russian;
+      let shikiMalId = null;
+      if (shikiResult && shikiResult.length > 0) {
+        const best = shikiResult[0];
         if (best.name) {
+          S._russianQuery = best.russian || best.name;
           searchTerm = best.name;
           shikiMalId = best.id;  // Shikimori ID = MAL ID
           showToast(`Shikimori: «${best.russian || best.name}» → MAL: «${searchTerm}»`, 'success');
@@ -898,122 +969,25 @@ function closeExportMenu() {
   document.getElementById('exportMenu').classList.add('hidden');
 }
 async function exportList(format) {
+  closeExportMenu();
   try {
-    const statuses = ['WATCHING','WILL_WATCH','WATCHED','FAVORITE','DROPPED'];
-    const all = [];
-    for (const s of statuses) {
-      let page = 0, last = false;
-      while (!last) {
-        const data = await api('GET', `/api/anime?status=${s}&page=${page}&size=200`);
-        (data.content || []).forEach(a => all.push(a));
-        last = data.last;
-        page++;
-      }
-    }
-
-    if (format === 'csv') {
-      const header = 'Russian Name,Japanese Name,Status,Rating,Genres,Year,Episodes,Watched,Synopsis';
-      const rows = all.map(a => [
-        csvCell(a.russianName), csvCell(a.japaneseName), a.status || '',
-        a.rating || '', csvCell((a.genres||[]).join('|')),
-        a.year || '', a.episodeCount || '', a.episodesWatched || '',
-        csvCell(a.description)
-      ].join(','));
-      downloadFile('anime_list.csv', 'text/csv', [header, ...rows].join('\n'));
-    } else if (format === 'json') {
-      const clean = all.map(a => ({
-        russianName: a.russianName, japaneseName: a.japaneseName,
-        status: a.status, rating: a.rating, genres: a.genres,
-        year: a.year, episodeCount: a.episodeCount,
-        episodesWatched: a.episodesWatched, description: a.description,
-      }));
-      downloadFile('anime_list.json', 'application/json', JSON.stringify(clean, null, 2));
-    } else {
-      const rows = all.map(a =>
-        `${a.russianName}${a.japaneseName ? ' / ' + a.japaneseName : ''} [${STATUS_CFG[a.status]?.label || a.status}]`
-      );
-      downloadFile('anime_list.txt', 'text/plain', rows.join('\n'));
-    }
-    showToast(`Exported ${all.length} anime as .${format}`, 'success');
+    const blob=await (await fetch(`/api/anime/export/${format}`)).blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=`anime-tracker.${format}`; a.click();
+    showToast('Exported!','success');
   } catch { showError('Export failed'); }
 }
-
-function csvCell(val) {
-  if (!val) return '';
-  const s = String(val).replace(/"/g, '""');
-  return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s}"` : s;
-}
-
-function downloadFile(name, mime, content) {
-  const blob = new Blob(['\uFEFF' + content], { type: mime + ';charset=utf-8' });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), { href: url, download: name });
-  document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
-}
-
-async function importFromFile(input) {
-  const file = input.files[0]; if (!file) return;
-  const text = await file.text();
-  input.value = '';
-
-  let entries = [];
-  if (file.name.endsWith('.json')) {
-    entries = JSON.parse(text);
-  } else if (file.name.endsWith('.csv')) {
-    const lines = text.split('\n').slice(1); // skip header
-    entries = lines.filter(l => l.trim()).map(line => {
-      const cols = parseCsvLine(line);
-      return {
-        russianName:     cols[0] || '',
-        japaneseName:    cols[1] || null,
-        status:          cols[2] || 'WATCHING',
-        rating:          cols[3] ? parseFloat(cols[3]) : null,
-        genres:          cols[4] ? cols[4].split('|').filter(Boolean) : [],
-        year:            cols[5] ? parseInt(cols[5]) : null,
-        episodeCount:    cols[6] ? parseInt(cols[6]) : null,
-        episodesWatched: cols[7] ? parseInt(cols[7]) : null,
-        description:     cols[8] || null,
-      };
-    }).filter(e => e.russianName);
-  } else {
-    // plain txt — one anime name per line
-    entries = text.split('\n').filter(l => l.trim()).map(l => ({
-      russianName: l.trim(), status: 'WATCHING'
-    }));
-  }
-
-  if (!entries.length) { showError('No entries found in file'); return; }
-
-  // Reverse so that item[0] gets imported last → newest timestamp → appears first
-  entries.reverse();
-
-  const BATCH = 50;
-  let imported = 0;
-  for (let i = 0; i < entries.length; i += BATCH) {
-    await api('POST', '/api/anime/bulk', entries.slice(i, i + BATCH));
-    imported += Math.min(BATCH, entries.length - i);
-    showToast(`Importing… ${imported}/${entries.length}`, 'success');
-  }
-  showToast(`Imported ${imported} anime!`, 'success');
-  // Auto-remove any duplicates created by re-importing
+async function importList(event) {
+  const file=event.target.files[0];
+  if(!file) return;
+  const fd=new FormData(); fd.append('file',file);
   try {
-    const deduped = await api('DELETE', '/api/anime/dedupe');
-    if (deduped && deduped.removed > 0) showToast(`Removed ${deduped.removed} duplicates`, 'success');
-  } catch {}
-  await Promise.all([loadCounts(), loadSection(S.status)]);
-}
-
-function parseCsvLine(line) {
-  const result = []; let cur = ''; let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
-    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
-    else cur += c;
-  }
-  result.push(cur);
-  return result;
+    await fetch('/api/anime/import',{method:'POST',body:fd});
+    event.target.value='';
+    showToast('Imported!','success');
+    await Promise.all([loadCounts(), refreshList()]);
+  } catch { showError('Import failed'); }
 }
 
 // ─── DETAIL MODAL ─────────────────────────────────────────
@@ -1022,11 +996,16 @@ async function openDetailModal(id) {
   document.getElementById('detailMalScore').classList.add('hidden');
   document.getElementById('malPickerWrap').classList.add('hidden');
   document.getElementById('malPickerWrap').innerHTML='';
-  try { populateDetail(await api('GET',`/api/anime/${id}`)); openModal('detailModal'); }
-  catch { showError('Load failed'); }
+  try { 
+    const anime = await api('GET',`/api/anime/${id}`);
+    await populateDetail(anime); 
+    openModal('detailModal'); 
+  } catch (e) { 
+    showError('Issue loading anime details: ' + (e.message || 'Not found')); 
+  }
 }
 
-function populateDetail(anime) {
+async function populateDetail(anime) {
   document.getElementById('detailRussian').textContent =anime.russianName||'';
   document.getElementById('detailJapanese').textContent=anime.japaneseName||'';
   const img=document.getElementById('detailImg');
@@ -1039,12 +1018,213 @@ function populateDetail(anime) {
   const ep=document.getElementById('detailEpisodes');
   if(anime.episodeCount){ ep.textContent=anime.episodesWatched!=null?`${anime.episodesWatched} / ${anime.episodeCount} ep.`:`${anime.episodeCount} ep.`; ep.style.display=''; }
   else ep.style.display='none';
-  document.getElementById('detailStars').innerHTML=starsHtml(anime.rating,'d-star');
+  
+  // Interactive stars in detail modal
+  const starsBox = document.getElementById('detailStars');
+  starsBox.innerHTML = '';
+  starsBox.style.cssText = 'display:flex;gap:4px;align-items:center;';
+  
+  let currentRating = anime.rating || 0;
+  
+  // Create all 5 stars
+  for (let i = 1; i <= 5; i++) {
+    const star = document.createElement('span');
+    star.style.cssText = 'font-size:1.4rem;transition:all 0.15s;cursor:pointer;user-select:none;display:inline-block;';
+    star.dataset.starIndex = i;
+    starsBox.appendChild(star);
+  }
+  
+  function renderDetailStars(rating) {
+    currentRating = rating;
+    
+    for (let i = 1; i <= 5; i++) {
+      const star = starsBox.children[i - 1];
+      
+      // Clear previous content and listeners by cloning
+      const newStar = star.cloneNode(false);
+      star.parentNode.replaceChild(newStar, star);
+      
+      newStar.style.cssText = 'font-size:1.4rem;transition:all 0.15s;cursor:pointer;user-select:none;display:inline-block;';
+      newStar.dataset.starIndex = i;
+      
+      if (rating >= i) {
+        newStar.textContent = '★';
+        newStar.style.color = 'var(--star)';
+      } else if (rating >= i - 0.5) {
+        newStar.innerHTML = '<span style="position:relative;display:inline-block;color:var(--star-e);">☆<span style="position:absolute;left:0;top:0;width:50%;overflow:hidden;color:var(--star);">★</span></span>';
+      } else {
+        newStar.textContent = '☆';
+        newStar.style.color = 'var(--star-e)';
+      }
+      
+      // Click - detect which half was clicked
+      newStar.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Check if clicked on left or right half
+        const rect = newStar.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const isLeftHalf = clickX < rect.width / 2;
+        
+        const newRating = isLeftHalf ? (i - 0.5) : i;
+        renderDetailStars(newRating);
+        await updateAnimeRating(anime.id, newRating);
+      });
+      
+      // Hover preview
+      newStar.addEventListener('mouseenter', () => {
+        for (let j = 1; j <= 5; j++) {
+          const s = starsBox.children[j-1];
+          if (s) {
+            if (j <= i) {
+              s.style.color = 'var(--star)';
+              s.style.transform = 'scale(1.1)';
+            } else {
+              s.style.color = 'var(--star-e)';
+              s.style.transform = 'scale(1)';
+            }
+          }
+        }
+      });
+    }
+  }
+  
+  // Reset hover
+  starsBox.addEventListener('mouseleave', () => {
+    renderDetailStars(currentRating);
+    Array.from(starsBox.children).forEach(s => s.style.transform = 'scale(1)');
+  });
+  
+  renderDetailStars(currentRating);
+  
   document.getElementById('detailSynopsis').textContent=anime.description||'';
   document.getElementById('detailGenres').innerHTML=(anime.genres||[]).map(g=>`<span class="detail-genre-tag">${esc(g)}</span>`).join('');
   document.getElementById('detailMoveSelect').value=anime.status;
   document.getElementById('detailEditBtn').onclick=()=>{ closeModal('detailModal'); openEditModal(anime); };
   document.getElementById('detailDeleteBtn').onclick=()=>confirmDelete(anime.id,anime.russianName);
+  
+  // ═══ FAVORITE TOGGLE BUTTON ═══
+  await updateFavoriteButton(anime);
+}
+
+// Helper function to update anime rating
+async function updateAnimeRating(id, rating) {
+  try {
+    const anime = await api('GET', `/api/anime/${id}`);
+    await api('PUT', `/api/anime/${id}`, { ...buildBody(anime), rating });
+    
+    // Sync rating to favorite entry if exists
+    const allMatches = await api('GET', `/api/anime/search?q=${encodeURIComponent(anime.russianName)}`);
+    const favoriteEntry = allMatches.find(a => 
+      a.status === 'FAVORITE' && 
+      a.russianName.toLowerCase() === anime.russianName.toLowerCase() &&
+      a.id !== id
+    );
+    
+    if (favoriteEntry && favoriteEntry.rating !== rating) {
+      await api('PUT', `/api/anime/${favoriteEntry.id}`, {
+        ...buildBody(favoriteEntry),
+        rating: rating
+      });
+    }
+    
+    showToast(`Rated ${rating} stars!`, 'success');
+  } catch (e) {
+    showError('Failed to update rating: ' + (e.message || 'Try again'));
+  }
+}
+
+async function updateFavoriteButton(anime) {
+  const favBtn = document.getElementById('detailFavoriteBtn');
+  if (!favBtn) return;
+  
+  // Check if a favorite entry exists for this anime (by name, different ID)
+  try {
+    const allMatches = await api('GET', `/api/anime/search?q=${encodeURIComponent(anime.russianName)}`);
+    const favoriteEntry = allMatches.find(a => 
+      a.status === 'FAVORITE' && 
+      a.russianName.toLowerCase() === anime.russianName.toLowerCase()
+    );
+    
+    if (favoriteEntry) {
+      favBtn.innerHTML = '<span style="color:var(--star);">★</span> Remove Favorite';
+      favBtn.className = 'btn-accent';
+      favBtn.onclick = () => removeFavorite(anime, favoriteEntry.id);
+    } else {
+      favBtn.textContent = '☆ Add to Favorites';
+      favBtn.className = 'btn-accent';
+      favBtn.onclick = () => addToFavorites(anime);
+    }
+  } catch (e) {
+    console.error('Failed to check favorite status:', e);
+  }
+}
+
+async function addToFavorites(anime) {
+  try {
+    // Create a copy of the anime in FAVORITE status
+    const body = {
+      ...buildBody(anime),
+      status: 'FAVORITE'
+    };
+    
+    await api('POST', '/api/anime', body);
+    showToast('Added to Favorites!', 'success');
+    
+    // Reload the button state
+    const currentAnime = await api('GET', `/api/anime/${S.detailId}`);
+    await updateFavoriteButton(currentAnime);
+    await loadCounts();
+  } catch (e) {
+    showError('Failed to add to favorites: ' + e.message);
+  }
+}
+
+async function removeFavorite(anime, favoriteId) {
+  // Use custom confirmation dialog with better styling
+  document.getElementById('confirmMsg').innerHTML = `
+    <div style="text-align:center;padding:1rem 0 0.5rem 0;">
+      <div style="font-size:2.5rem;margin-bottom:1rem;color:var(--star);">★</div>
+      <div style="font-size:1.1rem;font-weight:600;margin-bottom:0.8rem;">
+        Remove from Favorites?
+      </div>
+      <div style="color:var(--text);font-size:0.95rem;margin-bottom:0.5rem;">
+        <strong>"${anime.russianName}"</strong>
+      </div>
+      <div style="color:var(--muted);font-size:0.85rem;line-height:1.5;max-width:320px;margin:0 auto;">
+        This will only remove it from Favorites.<br>
+        The anime will still exist in ${STATUS_CFG[anime.status].label}.
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('confirmOkBtn').textContent = 'Remove';
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    closeModal('confirmDialog');
+    
+    try {
+      // DELETE returns 204 No Content, so don't try to parse JSON
+      const res = await fetch(`/api/anime/${favoriteId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      
+      showToast('Removed from Favorites!', 'success');
+      
+      // Reload the button state
+      const currentAnime = await api('GET', `/api/anime/${S.detailId}`);
+      await updateFavoriteButton(currentAnime);
+      await loadCounts();
+      
+      // Refresh list if we're in Favorites tab
+      if (S.status === 'FAVORITE') {
+        await refreshList();
+      }
+    } catch (e) {
+      showError('Issue removing from favorites: ' + (e.message || 'Try again'));
+    }
+  };
+  
+  openModal('confirmDialog');
 }
 
 async function applyMove() {
@@ -1122,51 +1302,54 @@ async function fetchFromMAL() {
       btn.textContent = '↻ Searching…';
       const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
       results = data.data || [];
+      results.sort((a,b)=>(b.score||0)-(a.score||0));
     }
 
-    const items = results.slice(0, 8);
-    console.log('[FetchMAL] Total results:', results.length, '| showing:', items.length);
-    if (!items.length) { showToast('No MAL results — try editing and searching manually', 'error'); return; }
-
-    // Show score of top result
-    if (items[0].score) {
-      document.getElementById('detailMalScoreVal').textContent = items[0].score;
-      document.getElementById('detailMalScore').classList.remove('hidden');
-    }
-
-    // Always show picker so user can choose the right one
+    if (!results.length) { showToast('No MAL results — try editing and searching manually', 'error'); return; }
+    const scoreBox = document.getElementById('detailMalScore');
     const wrap = document.getElementById('malPickerWrap');
+    const first = results[0];
+    if (first.score) {
+      scoreBox.classList.remove('hidden');
+      document.getElementById('detailMalScoreVal').textContent = first.score;
+    }
     wrap.classList.remove('hidden');
-    wrap.innerHTML = '<small style="color:var(--muted);width:100%;display:block;margin-bottom:.4rem">Select the correct anime:</small>'
-      + items.map((item, i) => {
-          const img = item.images?.jpg?.image_url || '';
-          const year = item.year || '';
-          const eps  = item.episodes ? item.episodes + ' ep' : '';
-          const score = item.score ? '★' + item.score : '';
-          const sub  = [year, eps, score].filter(Boolean).join(' · ');
-          return `<button class="mal-pick-btn" data-i="${i}">
-            ${img ? `<img src="${esc(img)}" alt="">` : ''}
-            <div><div style="font-weight:600">${esc(item.title_english||item.title)}</div>
-            <div style="font-size:.7rem;color:var(--muted)">${esc(sub)}</div></div>
-          </button>`;
-        }).join('');
-    wrap.querySelectorAll('.mal-pick-btn').forEach((b, i) =>
-      b.addEventListener('click', () => { wrap.classList.add('hidden'); applyMalToDetail(items[i]); }));
-
-  } catch { showError('MAL fetch failed'); }
+    wrap.innerHTML = `
+      <div style="font-size:.85rem;color:var(--muted);margin-bottom:.6rem">Select best match from MAL:</div>
+      ${results.slice(0,5).map((item,i) => {
+        const img = item.images?.jpg?.image_url || '';
+        const title = item.title_english || item.title || '';
+        const year = item.year || item.aired?.prop?.from?.year || '';
+        const meta = [year, item.score ? '⭐'+item.score : ''].filter(Boolean).join(' · ');
+        return `<div class="mal-match-card" onclick="applyMALUpdate(${i},this)">
+          ${img ? `<img src="${esc(img)}" style="width:40px;height:56px;object-fit:cover;border-radius:4px">` : ''}
+          <div style="flex:1">
+            <div style="font-weight:600">${esc(title)}</div>
+            ${meta ? `<div style="font-size:.8rem;color:var(--muted)">${esc(meta)}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    `;
+    S._malResults = results;
+    showToast('MAL results loaded — pick the best match below', 'success');
+  } catch { showToast('Failed to fetch from MAL', 'error'); }
   finally { btn.textContent = '↻ Fetch from MAL'; btn.disabled = false; }
 }
 
-async function quickAutoFill(animeId, btn) {
-  const origText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳';
+async function applyMALUpdate(idx, cardEl) {
+  const selected = S._malResults?.[idx];
+  if (!selected || !S.detailId) return;
+  const btn = cardEl;
+  const origHtml = btn.innerHTML;
+  btn.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted)">Updating…</div>';
+  btn.style.pointerEvents = 'none';
+
   try {
-    const anime = await api('GET', `/api/anime/${animeId}`);
+    const anime = await api('GET', `/api/anime/${S.detailId}`);
     const searchQ = anime.japaneseName || anime.russianName;
     if (!searchQ) { showToast('No name to search with', 'error'); return; }
 
-    let topItem = null;
+    let results = [];
     if (isCyrillic(searchQ)) {
       let shikiMalId = null, fetchTerm = searchQ;
       try {
@@ -1174,145 +1357,139 @@ async function quickAutoFill(animeId, btn) {
         if (shikiItems?.length > 0) { fetchTerm = shikiItems[0].name || searchQ; shikiMalId = shikiItems[0].id; }
         else { fetchTerm = await translateRuToEn(searchQ) || searchQ; }
       } catch {}
-      if (shikiMalId) {
-        const det = await fetch(`/api/jikan/details/${shikiMalId}`).then(r=>r.json());
-        topItem = det?.data || null;
-      }
-      if (!topItem) {
-        const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
-        topItem = data?.data?.[0] || null;
+      const fetches = [ fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()) ];
+      if (shikiMalId) fetches.push(fetch(`/api/jikan/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data:d.data?[d.data]:[]})));
+      const settled = await Promise.allSettled(fetches);
+      const seen = new Set();
+      for (const r of settled) {
+        if (r.status==='fulfilled') {
+          const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
+          results = data.data || [];
+        }
       }
     } else {
       const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
-      topItem = data?.data?.[0] || null;
+      results = data.data || [];
     }
-
+    const topItem = results.length > 0 ? results[0] : null;
     if (!topItem) { showToast('No result found for: ' + searchQ, 'error'); return; }
 
-    // Apply directly — same logic as applyMalToDetail but using the anime id
-    const synopsis = (topItem.synopsis||'').replace(/\[Written by MAL Rewrite\]/gi,'').trim().substring(0,1500);
-    const imgUrl = topItem.images?.jpg?.large_image_url || topItem.images?.jpg?.image_url || '';
-    const newGenres = (topItem.genres||[]).map(g=>GENRE_MAP[g.name]||g.name).filter(g=>GENRES.includes(g));
-    const merged = [...new Set([...(anime.genres||[]),...newGenres])];
-    const updated = await api('PUT', `/api/anime/${animeId}`, {
-      ...buildBody(anime),
-      japaneseName: anime.japaneseName || topItem.title || '',
-      year: topItem.year || topItem.aired?.prop?.from?.year || anime.year || null,
-      episodeCount: topItem.episodes || anime.episodeCount || null,
-      genres: merged,
-      description: synopsis || anime.description || '',
-      imagePath: imgUrl || anime.imagePath || '',
-    });
-    // Update S.list in-place so render() reflects new data immediately
-    const idx = S.list.findIndex(a => a.id === animeId);
-    if (idx >= 0) S.list[idx] = updated;
-    btn.textContent = '✅';
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 1500);
-    showToast(`⚡ ${anime.russianName} — filled`, 'success');
-    render();
-  } catch(e) {
-    showError('Auto-fill failed: ' + e.message);
-    btn.textContent = origText; btn.disabled = false;
-  }
+    const fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data);
+    if (!fullItem) { showToast('Failed to fetch full details', 'error'); return; }
+
+    const imgUrl = fullItem.images?.jpg?.large_image_url || fullItem.images?.jpg?.image_url || '';
+    const russianTitle = fullItem.titles?.find(t => /russian/i.test(t.type))?.title ||
+                         (fullItem.title_synonyms || []).find(s => /[а-яё]/i.test(s)) ||
+                         null;
+    const genres = (fullItem.genres || []).map(g => GENRE_MAP[g.name] || g.name).filter(g => GENRES.includes(g));
+    const yearVal = fullItem.year || fullItem.aired?.prop?.from?.year || null;
+    const episodeCount = fullItem.episodes || null;
+    const synopsis = (fullItem.synopsis || '').replace(/\[Written by MAL Rewrite\]/gi, '').trim().substring(0, 1500);
+
+    const body = { ...buildBody(anime) };
+    if (!anime.russianName && russianTitle) body.russianName = russianTitle;
+    if (imgUrl && !anime.imagePath) body.imagePath = imgUrl;
+    if (genres.length > 0 && (!anime.genres || anime.genres.length === 0)) body.genres = genres;
+    if (yearVal && !anime.year) body.year = yearVal;
+    if (episodeCount && !anime.episodeCount) body.episodeCount = episodeCount;
+    if (synopsis && !anime.description) body.description = synopsis;
+
+    await api('PUT', `/api/anime/${S.detailId}`, body);
+    showToast('Updated from MAL!', 'success');
+    closeModal('detailModal');
+    await refreshList();
+  } catch { showToast('Update failed', 'error'); }
+  finally { btn.innerHTML = origHtml; btn.style.pointerEvents = ''; }
 }
 
-async function autoFillFromMAL() {
-  const btn = document.getElementById('detailAutoFillBtn');
-  const ruName = document.getElementById('detailRussian').textContent.trim();
-  const jaName = document.getElementById('detailJapanese').textContent.trim();
-  const searchQ = jaName || ruName;
-  if (!searchQ || !S.detailId) return;
-
-  btn.disabled = true;
-  btn.textContent = '⚡ …';
-
+async function quickAutoFill(id, btnEl) {
+  const origText = btnEl.textContent;
+  btnEl.textContent = '↻';
+  btnEl.disabled = true;
   try {
-    let topItem = null;
+    const anime = await api('GET', `/api/anime/${id}`);
+    const searchQ = anime.japaneseName || anime.russianName;
+    if (!searchQ) { showToast('No name to search with', 'error'); return; }
 
+    let results = [];
     if (isCyrillic(searchQ)) {
-      // Shikimori → pin MAL ID → take top result
-      let fetchTerm = searchQ;
-      let shikiMalId = null;
+      let shikiMalId = null, fetchTerm = searchQ;
       try {
         const shikiItems = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
         if (shikiItems?.length > 0) { fetchTerm = shikiItems[0].name || searchQ; shikiMalId = shikiItems[0].id; }
         else { fetchTerm = await translateRuToEn(searchQ) || searchQ; }
       } catch {}
-
-      if (shikiMalId) {
-        // Fetch the exact match directly by ID — no ambiguity
-        const det = await fetch(`/api/jikan/details/${shikiMalId}`).then(r=>r.json());
-        topItem = det?.data || null;
-      }
-      if (!topItem) {
-        const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
-        topItem = data?.data?.[0] || null;
+      const fetches = [ fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()) ];
+      if (shikiMalId) fetches.push(fetch(`/api/jikan/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data:d.data?[d.data]:[]})));
+      const settled = await Promise.allSettled(fetches);
+      const seen = new Set();
+      for (const r of settled) {
+        if (r.status==='fulfilled') {
+          for (const item of (r.value?.data||[])) {
+            if (!seen.has(item.mal_id)) { seen.add(item.mal_id); results.push(item); }
+          }
+        }
       }
     } else {
       const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
-      topItem = data?.data?.[0] || null;
+      results = data.data || [];
     }
+    const topItem = results.length > 0 ? results[0] : null;
+    if (!topItem) { showToast('No result found for: ' + searchQ, 'error'); return; }
 
-    if (!topItem) { showToast('No MAL result found', 'error'); return; }
-    await applyMalToDetail(topItem);
-    showToast(`⚡ Auto-filled: ${topItem.title_english || topItem.title}`, 'success');
-  } catch { showError('Auto-fill failed'); }
-  finally { btn.disabled = false; btn.textContent = '⚡ Auto-fill'; }
-}
+    const fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data);
+    if (!fullItem) { showToast('Failed to fetch full details', 'error'); return; }
 
-async function applyMalToDetail(item) {
-  if(!S.detailId) return;
-  try {
-    const anime=await api('GET',`/api/anime/${S.detailId}`);
-    const synopsis=(item.synopsis||'').replace(/\[Written by MAL Rewrite\]/gi,'').trim().substring(0,1500);
-    const imgUrl=item.images?.jpg?.large_image_url||item.images?.jpg?.image_url||'';
-    const newGenres=(item.genres||[]).map(g=>GENRE_MAP[g.name]||g.name).filter(g=>GENRES.includes(g));
-    const merged=[...new Set([...(anime.genres||[]),...newGenres])];
-    const updated=await api('PUT',`/api/anime/${S.detailId}`,{
-      ...buildBody(anime),
-      japaneseName:anime.japaneseName||item.title,
-      description:synopsis||anime.description,
-      imagePath:imgUrl||anime.imagePath,
-      year:item.year||anime.year,
-      episodeCount:item.episodes||anime.episodeCount,
-      genres:merged,
-    });
-    populateDetail(updated);
-    document.getElementById('malPickerWrap').classList.add('hidden');
-    if(item.score){ document.getElementById('detailMalScoreVal').textContent=item.score; document.getElementById('detailMalScore').classList.remove('hidden'); }
-    const idx=S.list.findIndex(a=>a.id===S.detailId); if(idx>=0) S.list[idx]=updated;
-    showToast('Updated from MAL!','success');
-  } catch { showError('Apply MAL data failed'); }
+    const imgUrl = fullItem.images?.jpg?.large_image_url || fullItem.images?.jpg?.image_url || '';
+    const russianTitle = fullItem.titles?.find(t => /russian/i.test(t.type))?.title ||
+                         (fullItem.title_synonyms || []).find(s => /[а-яё]/i.test(s)) ||
+                         null;
+    const genres = (fullItem.genres || []).map(g => GENRE_MAP[g.name] || g.name).filter(g => GENRES.includes(g));
+    const yearVal = fullItem.year || fullItem.aired?.prop?.from?.year || null;
+    const episodeCount = fullItem.episodes || null;
+    const synopsis = (fullItem.synopsis || '').replace(/\[Written by MAL Rewrite\]/gi, '').trim().substring(0, 1500);
+
+    const body = { ...buildBody(anime) };
+    if (!anime.russianName && russianTitle) body.russianName = russianTitle;
+    if (imgUrl && !anime.imagePath) body.imagePath = imgUrl;
+    if (genres.length > 0 && (!anime.genres || anime.genres.length === 0)) body.genres = genres;
+    if (yearVal && !anime.year) body.year = yearVal;
+    if (episodeCount && !anime.episodeCount) body.episodeCount = episodeCount;
+    if (synopsis && !anime.description) body.description = synopsis;
+
+    await api('PUT', `/api/anime/${id}`, body);
+    btnEl.textContent = '✓';
+    setTimeout(() => { btnEl.textContent = origText; btnEl.disabled = false; }, 1500);
+    await refreshList();
+  } catch { showToast('Auto-fill failed', 'error'); btnEl.textContent = origText; btnEl.disabled = false; }
 }
 
 // ─── DELETE ───────────────────────────────────────────────
-function confirmDelete(id,name) {
-  document.getElementById('confirmMsg').textContent=`Delete "${name}"?`;
-  document.getElementById('confirmOkBtn').onclick=async()=>{
+function confirmDelete(id, name) {
+  document.getElementById('confirmMsg').textContent = `Delete "${name}"?`;
+  document.getElementById('confirmOkBtn').onclick = async () => {
     try {
-      await api('DELETE',`/api/anime/${id}`);
+      await api('DELETE', `/api/anime/${id}`);
+      showToast('Deleted!', 'success');
       closeModal('confirmDialog'); closeModal('detailModal');
-      showToast('Deleted','success');
       await Promise.all([loadCounts(), refreshList()]);
     } catch { showError('Delete failed'); }
   };
   openModal('confirmDialog');
 }
 
-// ─── MODAL ────────────────────────────────────────────────
-function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
-function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-
-// ─── TOAST ────────────────────────────────────────────────
-let _tt;
-function showToast(msg,type='success') {
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.className=`toast ${type}`;
-  clearTimeout(_tt); _tt=setTimeout(()=>t.classList.add('hidden'),2800);
+// ─── TOAST / ERROR ────────────────────────────────────────
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show ${type === 'success' ? 'toast-success' : type === 'error' ? 'toast-error' : ''}`;
+  setTimeout(() => t.classList.remove('show'), 3000);
 }
-function showError(msg) { showToast(msg,'error'); }
+function showError(msg) { showToast(msg, 'error'); }
 
 // ─── UTIL ─────────────────────────────────────────────────
-function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
