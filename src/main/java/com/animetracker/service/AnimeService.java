@@ -189,8 +189,8 @@ public class AnimeService {
     private void deleteImageFile(String imagePath) {
         try {
             Files.deleteIfExists(Paths.get("." + imagePath));
-        } catch (IOException e) {
-            log.warn("Could not delete image: {}", imagePath);
+        } catch (Exception e) {
+            log.warn("Could not delete image: {} — {}", imagePath, e.getMessage());
         }
     }
 }

@@ -24,6 +24,7 @@ public class JikanController {
     private static final String JIKAN_SEARCH  = "https://api.jikan.moe/v4/anime?q={q}&limit=8&sfw=true";
     private static final String JIKAN_DETAIL  = "https://api.jikan.moe/v4/anime/{id}";
     private static final String SHIKIMORI_SEARCH = "https://shikimori.one/api/animes?search={q}&limit=10&order=popularity";
+    private static final String ANILIST_GRAPHQL = "https://graphql.anilist.co";
     private static final String GTRANSLATE    =
         "https://translate.googleapis.com/translate_a/single?client=gtx&sl={sl}&tl={tl}&dt=t&q={q}";
 
@@ -99,6 +100,50 @@ public class JikanController {
 
         log.info("Processed '{}' → '{}' | synopsis {} chars", title, ruTitle, ruSynopsis.length());
         return ResponseEntity.ok(Map.of("ruTitle", ruTitle, "ruSynopsis", ruSynopsis));
+    }
+
+    // ── AniList GraphQL Search (fallback when Jikan is down) ──────────────────
+    @GetMapping("/anilist/search")
+    public ResponseEntity<String> anilistSearch(@RequestParam String q) {
+        log.info("AniList search: {}", q);
+        String query = "query ($search: String) { Page(perPage: 8) { media(search: $search, type: ANIME, sort: POPULARITY_DESC) { " +
+            "id title { english romaji native } coverImage { large } description episodes averageScore seasonYear genres } } }";
+        Map<String, Object> variables = Map.of("search", q);
+        Map<String, Object> requestBody = Map.of("query", query, "variables", variables);
+        
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> entity = 
+                new org.springframework.http.HttpEntity<>(requestBody, headers);
+            var response = restTemplate.postForObject(ANILIST_GRAPHQL, entity, String.class);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("AniList search error: {}", e.getMessage());
+            return ResponseEntity.ok("{\"data\":null}");
+        }
+    }
+
+    // ── AniList GraphQL Details (fallback when Jikan is down) ─────────────────
+    @GetMapping("/anilist/details/{id}")
+    public ResponseEntity<String> anilistDetails(@PathVariable int id) {
+        log.info("AniList details: {}", id);
+        String query = "query ($id: Int) { Media(id: $id, type: ANIME) { " +
+            "id title { english romaji native } coverImage { large } description episodes averageScore seasonYear genres } }";
+        Map<String, Object> variables = Map.of("id", id);
+        Map<String, Object> requestBody = Map.of("query", query, "variables", variables);
+        
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> entity = 
+                new org.springframework.http.HttpEntity<>(requestBody, headers);
+            var response = restTemplate.postForObject(ANILIST_GRAPHQL, entity, String.class);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("AniList details error: {}", e.getMessage());
+            return ResponseEntity.ok("{\"data\":null}");
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

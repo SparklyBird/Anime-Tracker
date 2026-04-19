@@ -128,6 +128,7 @@ function switchTab(status) {
   S.status = status; S.query = ''; S_page = 0; S_loading = false; S_lastPage = false;
   S.list = [];
   document.getElementById('searchInput').value = '';
+  window.scrollTo(0, 0);
   loadSection(status);
 }
 
@@ -144,14 +145,31 @@ async function loadCounts() {
 async function loadSection(status, append = false) {
   if (S_loading || S_lastPage) return;
   S_loading = true;
-  showLoading();
+  
+  // Only show full loading spinner on initial load, not during scroll
+  if (!append) {
+    showLoading();
+  }
+  
   try {
     const data = await api('GET', `/api/anime?status=${status}&page=${S_page}&size=${PAGE_SIZE}`);
     if (append) {
       S.list = [...S.list, ...data.content];
-      const frag = document.createDocumentFragment();
-      data.content.forEach(a => frag.appendChild(createItem(a)));
-      document.getElementById('listArea').appendChild(frag);
+      // Remove any existing loading spinner
+      const spinner = document.querySelector('.loading-wrap');
+      if (spinner) spinner.remove();
+      // When noImageOnly is active, only render items without images
+      const toRender = S.noImageOnly ? data.content.filter(a => !a.imagePath) : data.content;
+      if (toRender.length > 0) {
+        // Remove empty state if it's currently showing
+        const emptyState = document.querySelector('#listArea .empty-state');
+        if (emptyState) emptyState.remove();
+        const frag = document.createDocumentFragment();
+        toRender.forEach(a => frag.appendChild(createItem(a)));
+        document.getElementById('listArea').appendChild(frag);
+      }
+      // Update count dynamically
+      updateResultCount();
     } else {
       S.list = data.content;
       render();
@@ -168,10 +186,48 @@ async function loadSection(status, append = false) {
 async function refreshList() {
   S.list = []; S_page = 0; S_loading = false; S_lastPage = false;
   if (S.query) {
-    searchMode(S.query);
+    if (S.status !== 'FAVORITE') {
+      searchModeGrouped(S.query);
+    } else {
+      searchMode(S.query);
+    }
+  } else if (S.noImageOnly) {
+    await loadUntilItemsFound();
   } else {
     loadSection(S.status);
   }
+}
+
+// Helper function to keep loading until we have items that pass the filter
+async function loadUntilItemsFound() {
+  showLoading();
+  let attempts = 0;
+  const maxAttempts = 20; // Don't loop forever
+  
+  while (attempts < maxAttempts && !S_lastPage) {
+    try {
+      const data = await api('GET', `/api/anime?status=${S.status}&page=${S_page}&size=${PAGE_SIZE}`);
+      S.list = [...S.list, ...data.content];
+      S_page = data.page + 1;
+      S_lastPage = data.last;
+      
+      // Check if we have any items matching the filter
+      const filtered = S.list.filter(a => !a.imagePath);
+      if (filtered.length > 0 || S_lastPage) {
+        // Found some items or reached the end
+        render();
+        return;
+      }
+      
+      attempts++;
+    } catch (e) {
+      showError('Failed to load');
+      return;
+    }
+  }
+  
+  // If we get here, render whatever we have
+  render();
 }
 
 // Infinite scroll
@@ -191,6 +247,7 @@ async function api(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
   if (!res.ok) throw new Error(res.statusText);
+  if (res.status === 204 || res.headers.get('content-length') === '0') return null;
   return res.json();
 }
 
@@ -404,6 +461,11 @@ function render() {
   area.appendChild(frag);
 }
 
+function updateResultCount() {
+  const count = document.getElementById('listArea').querySelectorAll('.anime-item').length;
+  document.getElementById('resultCount').textContent = `${count} anime`;
+}
+
 function starsHtml(rating, cls) {
   if (!rating) return '';
   let h='';
@@ -588,9 +650,29 @@ async function performSave() {
       }
     }
     
+    const scrollPos = window.scrollY;
     closeModal('editModal');
     showToast(S.editingId ? 'Updated!' : 'Added!', 'success');
-    await Promise.all([loadCounts(), refreshList()]);
+
+    if (S.editingId) {
+      // ── EDIT: patch in-place, no full reload ─────────────
+      // Update S.list entry
+      const idx = S.list.findIndex(a => a.id === saved.id);
+      if (idx !== -1) S.list[idx] = saved;
+
+      // Update the DOM card in-place
+      const editBtn = document.querySelector(`button[onclick*="openEditModalById(${saved.id})"]`);
+      if (editBtn) {
+        editBtn.closest('.anime-item')?.replaceWith(createItem(saved));
+      }
+
+      // Restore scroll immediately (no re-render needed)
+      window.scrollTo(0, scrollPos);
+      await loadCounts();
+    } else {
+      // ── NEW: full reload so new item appears at top ───────
+      await Promise.all([loadCounts(), refreshList()]);
+    }
   } catch (e) { showError('Save failed: ' + e.message); }
 }
 
@@ -641,7 +723,7 @@ function buildGenreGrid() {
     const tip=GENRE_TIPS[g]||'';
     return `<div class="genre-item" title="${esc(tip)}">
       <input type="checkbox" id="g_${g.replace(/\s/g,'_')}" class="genre-cb" value="${g}">
-      <label for="g_${g.replace(/\s/g,'_')}">${g}</label>
+      <label class="genre-label" for="g_${g.replace(/\s/g,'_')}">${g}</label>
     </div>`;
   }).join('');
 }
@@ -813,6 +895,36 @@ async function doJikanSearch() {
       } else {
         merged.sort((a, b) => (b.score || 0) - (a.score || 0));
       }
+      
+      // ══ ANILIST FALLBACK if Jikan returned nothing ══
+      if (merged.length === 0) {
+        btn.textContent = '↻ AniList…';
+        try {
+          const anilistRes = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(searchTerm)}`);
+          const anilistData = await anilistRes.json();
+          if (anilistData?.data?.Page?.media) {
+            const anilistAnime = anilistData.data.Page.media.map(a => ({
+              mal_id: a.id,
+              title: a.title?.english || a.title?.romaji || '',
+              title_english: a.title?.english,
+              title_japanese: a.title?.native,
+              images: { jpg: { image_url: a.coverImage?.large || '' } },
+              synopsis: (a.description || '').replace(/<[^>]+>/g, ''),
+              episodes: a.episodes,
+              score: a.averageScore ? a.averageScore / 10 : null,
+              year: a.seasonYear,
+              genres: (a.genres || []).map(g => ({ name: g }))
+            }));
+            showToast('✓ Found via AniList (Jikan is down)', 'success');
+            showJikanResults(anilistAnime);
+            btn.textContent = 'Search MAL'; btn.disabled = false;
+            return;
+          }
+        } catch (e) {
+          console.error('AniList fallback failed:', e);
+        }
+      }
+      
       showJikanResults(merged);
 
     } catch { showError('MAL search failed'); }
@@ -823,7 +935,38 @@ async function doJikanSearch() {
     btn.textContent = '…';
     try {
       const data = await (await fetch(`/api/jikan/search?q=${encodeURIComponent(rawQ)}`)).json();
-      showJikanResults(data.data || []);
+      const results = data.data || [];
+      
+      // ══ ANILIST FALLBACK if Jikan returned nothing ══
+      if (results.length === 0) {
+        btn.textContent = '↻ AniList…';
+        try {
+          const anilistRes = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(rawQ)}`);
+          const anilistData = await anilistRes.json();
+          if (anilistData?.data?.Page?.media) {
+            const anilistAnime = anilistData.data.Page.media.map(a => ({
+              mal_id: a.id,
+              title: a.title?.english || a.title?.romaji || '',
+              title_english: a.title?.english,
+              title_japanese: a.title?.native,
+              images: { jpg: { image_url: a.coverImage?.large || '' } },
+              synopsis: (a.description || '').replace(/<[^>]+>/g, ''),
+              episodes: a.episodes,
+              score: a.averageScore ? a.averageScore / 10 : null,
+              year: a.seasonYear,
+              genres: (a.genres || []).map(g => ({ name: g }))
+            }));
+            showToast('✓ Found via AniList (Jikan is down)', 'success');
+            showJikanResults(anilistAnime);
+            btn.textContent = 'Search MAL'; btn.disabled = false;
+            return;
+          }
+        } catch (e) {
+          console.error('AniList fallback failed:', e);
+        }
+      }
+      
+      showJikanResults(results);
     } catch { showError('MAL search failed'); }
     finally { btn.textContent = 'Search MAL'; btn.disabled = false; }
   }
@@ -955,12 +1098,25 @@ async function fillFromJikan(item) {
 }
 
 // ─── EXPORT / IMPORT ──────────────────────────────────────
-function toggleNoImageFilter() {
+async function toggleNoImageFilter() {
   S.noImageOnly = !S.noImageOnly;
   const btn = document.getElementById('noImageBtn');
   btn.classList.toggle('active', S.noImageOnly);
   btn.textContent = S.noImageOnly ? 'All anime' : 'No image';
-  render();
+  
+  if (S.noImageOnly) {
+    // Reload and keep loading until we find items without images
+    S.list = [];
+    S_page = 0;
+    S_lastPage = false;
+    await loadUntilItemsFound();
+  } else {
+    // Just reload normally
+    S.list = [];
+    S_page = 0;
+    S_lastPage = false;
+    loadSection(S.status);
+  }
 }
 function toggleExportMenu() {
   document.getElementById('exportMenu').classList.toggle('hidden');
@@ -1371,16 +1527,67 @@ async function applyMALUpdate(idx, cardEl) {
       const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
       results = data.data || [];
     }
+    
+    // If Jikan search returned nothing, try AniList search as fallback
+    if (results.length === 0) {
+      try {
+        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+        if (anilistSearchData?.data?.Page?.media?.[0]) {
+          const anilistItems = anilistSearchData.data.Page.media;
+          results = anilistItems.map(a => ({
+            mal_id: a.id,
+            title: a.title?.english || a.title?.romaji || a.title?.native,
+            titles: [{ type: 'Default', title: a.title?.english || a.title?.romaji }],
+            images: { jpg: { image_url: a.coverImage?.large } }
+          }));
+          showToast('✓ Found via AniList (Jikan search failed)', 'success');
+        }
+      } catch (e) {
+        console.error('AniList search fallback failed:', e);
+      }
+    }
+    
     const topItem = results.length > 0 ? results[0] : null;
     if (!topItem) { showToast('No result found for: ' + searchQ, 'error'); return; }
 
-    const fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data);
-    if (!fullItem) { showToast('Failed to fetch full details', 'error'); return; }
+    let fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data).catch(() => null);
+    
+    // Try AniList fallback if Jikan failed - search by NAME
+    if (!fullItem) {
+      try {
+        const animeName = topItem.title || topItem.titles?.[0]?.title || searchQ;
+        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(animeName)}`).then(r=>r.json());
+        if (anilistSearchData?.data?.Page?.media?.[0]) {
+          const a = anilistSearchData.data.Page.media[0];
+          fullItem = {
+            mal_id: topItem.mal_id,  // Keep original MAL ID
+            images: { jpg: { large_image_url: a.coverImage?.large, image_url: a.coverImage?.large } },
+            titles: [{ type: 'Default', title: a.title?.english || a.title?.romaji }],
+            title_synonyms: [a.title?.native],
+            genres: (a.genres || []).map(g => ({ name: g })),
+            year: a.seasonYear,
+            episodes: a.episodes,
+            synopsis: (a.description || '').replace(/<[^>]+>/g, '')
+          };
+          showToast('✓ Auto-filled via AniList', 'success');
+        }
+      } catch (e) {
+        console.error('AniList fallback failed:', e);
+      }
+    }
+    
+    if (!fullItem) { 
+      showToast('Failed to fetch full details', 'error'); 
+      btnEl.textContent = origText; 
+      btnEl.disabled = false; 
+      return; 
+    }
 
     const imgUrl = fullItem.images?.jpg?.large_image_url || fullItem.images?.jpg?.image_url || '';
     const russianTitle = fullItem.titles?.find(t => /russian/i.test(t.type))?.title ||
                          (fullItem.title_synonyms || []).find(s => /[а-яё]/i.test(s)) ||
                          null;
+    const japaneseTitle = fullItem.title || fullItem.titles?.find(t => t.title && !/russian/i.test(t.type))?.title || null;
     const genres = (fullItem.genres || []).map(g => GENRE_MAP[g.name] || g.name).filter(g => GENRES.includes(g));
     const yearVal = fullItem.year || fullItem.aired?.prop?.from?.year || null;
     const episodeCount = fullItem.episodes || null;
@@ -1388,6 +1595,7 @@ async function applyMALUpdate(idx, cardEl) {
 
     const body = { ...buildBody(anime) };
     if (!anime.russianName && russianTitle) body.russianName = russianTitle;
+    if (!anime.japaneseName && japaneseTitle) body.japaneseName = japaneseTitle;
     if (imgUrl && !anime.imagePath) body.imagePath = imgUrl;
     if (genres.length > 0 && (!anime.genres || anime.genres.length === 0)) body.genres = genres;
     if (yearVal && !anime.year) body.year = yearVal;
@@ -1412,8 +1620,9 @@ async function quickAutoFill(id, btnEl) {
     if (!searchQ) { showToast('No name to search with', 'error'); return; }
 
     let results = [];
+    let fetchTerm = searchQ;  // Use romaji if Shikimori provides it
     if (isCyrillic(searchQ)) {
-      let shikiMalId = null, fetchTerm = searchQ;
+      let shikiMalId = null;
       try {
         const shikiItems = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
         if (shikiItems?.length > 0) { fetchTerm = shikiItems[0].name || searchQ; shikiMalId = shikiItems[0].id; }
@@ -1434,16 +1643,67 @@ async function quickAutoFill(id, btnEl) {
       const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
       results = data.data || [];
     }
+    
+    // If Jikan search returned nothing, try AniList search with romaji from Shikimori
+    if (results.length === 0) {
+      try {
+        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
+        if (anilistSearchData?.data?.Page?.media?.[0]) {
+          const anilistItems = anilistSearchData.data.Page.media;
+          results = anilistItems.map(a => ({
+            mal_id: a.id,
+            title: a.title?.english || a.title?.romaji || a.title?.native,
+            titles: [{ type: 'Default', title: a.title?.english || a.title?.romaji }],
+            images: { jpg: { image_url: a.coverImage?.large } }
+          }));
+          showToast('✓ Found via AniList (Jikan search failed)', 'success');
+        }
+      } catch (e) {
+        console.error('AniList search fallback failed:', e);
+      }
+    }
+    
     const topItem = results.length > 0 ? results[0] : null;
     if (!topItem) { showToast('No result found for: ' + searchQ, 'error'); return; }
 
-    const fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data);
-    if (!fullItem) { showToast('Failed to fetch full details', 'error'); return; }
+    let fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data).catch(() => null);
+    
+    // Try AniList fallback if Jikan failed - search by NAME
+    if (!fullItem) {
+      try {
+        const animeName = topItem.title || topItem.titles?.[0]?.title || searchQ;
+        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(animeName)}`).then(r=>r.json());
+        if (anilistSearchData?.data?.Page?.media?.[0]) {
+          const a = anilistSearchData.data.Page.media[0];
+          fullItem = {
+            mal_id: topItem.mal_id,  // Keep original MAL ID
+            images: { jpg: { large_image_url: a.coverImage?.large, image_url: a.coverImage?.large } },
+            titles: [{ type: 'Default', title: a.title?.english || a.title?.romaji }],
+            title_synonyms: [a.title?.native],
+            genres: (a.genres || []).map(g => ({ name: g })),
+            year: a.seasonYear,
+            episodes: a.episodes,
+            synopsis: (a.description || '').replace(/<[^>]+>/g, '')
+          };
+          showToast('✓ Auto-filled via AniList', 'success');
+        }
+      } catch (e) {
+        console.error('AniList fallback failed:', e);
+      }
+    }
+    
+    if (!fullItem) { 
+      showToast('Failed to fetch full details', 'error'); 
+      btnEl.textContent = origText; 
+      btnEl.disabled = false; 
+      return; 
+    }
 
     const imgUrl = fullItem.images?.jpg?.large_image_url || fullItem.images?.jpg?.image_url || '';
     const russianTitle = fullItem.titles?.find(t => /russian/i.test(t.type))?.title ||
                          (fullItem.title_synonyms || []).find(s => /[а-яё]/i.test(s)) ||
                          null;
+    const japaneseTitle = fullItem.title || fullItem.titles?.find(t => t.title && !/russian/i.test(t.type))?.title || null;
     const genres = (fullItem.genres || []).map(g => GENRE_MAP[g.name] || g.name).filter(g => GENRES.includes(g));
     const yearVal = fullItem.year || fullItem.aired?.prop?.from?.year || null;
     const episodeCount = fullItem.episodes || null;
@@ -1451,6 +1711,7 @@ async function quickAutoFill(id, btnEl) {
 
     const body = { ...buildBody(anime) };
     if (!anime.russianName && russianTitle) body.russianName = russianTitle;
+    if (!anime.japaneseName && japaneseTitle) body.japaneseName = japaneseTitle;
     if (imgUrl && !anime.imagePath) body.imagePath = imgUrl;
     if (genres.length > 0 && (!anime.genres || anime.genres.length === 0)) body.genres = genres;
     if (yearVal && !anime.year) body.year = yearVal;
@@ -1458,9 +1719,40 @@ async function quickAutoFill(id, btnEl) {
     if (synopsis && !anime.description) body.description = synopsis;
 
     await api('PUT', `/api/anime/${id}`, body);
+    
+    // Update the item in S.list instead of refreshing everything
+    const idx = S.list.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      // Fetch updated anime data
+      const updated = await api('GET', `/api/anime/${id}`);
+      S.list[idx] = updated;
+      
+      // If "No image" filter is active and anime now has image, remove it from view
+      if (S.noImageOnly && updated.imagePath) {
+        const items = document.querySelectorAll('.anime-item');
+        items.forEach(item => {
+          const editBtn = item.querySelector(`button[onclick*="openEditModalById(${id})"]`);
+          if (editBtn) {
+            item.remove();
+          }
+        });
+        updateResultCount();
+      } else {
+        // Update just this item in the DOM
+        const items = document.querySelectorAll('.anime-item');
+        items.forEach(item => {
+          const editBtn = item.querySelector(`button[onclick*="openEditModalById(${id})"]`);
+          if (editBtn) {
+            const newItem = createItem(updated);
+            item.replaceWith(newItem);
+          }
+        });
+      }
+    }
+    
     btnEl.textContent = '✓';
+    showToast('Auto-filled from MAL!', 'success');
     setTimeout(() => { btnEl.textContent = origText; btnEl.disabled = false; }, 1500);
-    await refreshList();
   } catch { showToast('Auto-fill failed', 'error'); btnEl.textContent = origText; btnEl.disabled = false; }
 }
 
@@ -1483,7 +1775,8 @@ function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = `toast show ${type === 'success' ? 'toast-success' : type === 'error' ? 'toast-error' : ''}`;
-  setTimeout(() => t.classList.remove('show'), 3000);
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(() => { t.className = 'toast hidden'; }, 3000);
 }
 function showError(msg) { showToast(msg, 'error'); }
 
