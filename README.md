@@ -28,7 +28,11 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 ## ✨ Features
 
 - **5 sections** — Watching, Will Watch, Finished, Favorite, Dropped
-- **Auto-fill from MAL** — type a Russian title, it routes through Shikimori to get the romaji name, then fetches poster, genres, synopsis, episode count and score from MyAnimeList automatically
+- **⭐ Favorite toggle** — add or remove anime from Favorites with one click in the detail modal
+- **📊 Rating sync** — ratings automatically sync between main list and Favorites entry
+- **🔍 Grouped search** — search results organized by section with color-coded headers
+- **Auto-fill from MAL** — type a Russian title, routes through Shikimori → romaji → MyAnimeList to fetch poster, genres, synopsis, episode count and score automatically
+- **🔄 AniList fallback** — if Jikan/MAL is unavailable, automatically retries the search via AniList GraphQL
 - **⚡ Quick auto-fill** — one-click fill per card without opening any modal
 - **Bulk import** — paste a plain text list of titles, or import an existing CSV / JSON backup
 - **Export** — save your full list as CSV, JSON, or TXT at any time
@@ -97,7 +101,7 @@ If you fork this for your own use, genres and UI labels can be swapped to any la
 | Backend | Spring Boot 3, Spring Data JPA |
 | Database | H2 (file-based, embedded) |
 | Frontend | Vanilla JS, HTML5, CSS3 |
-| APIs | [Jikan v4](https://jikan.moe/) (MAL wrapper), [Shikimori](https://shikimori.one/api/doc), Google Translate (free proxy) |
+| APIs | [Jikan v4](https://jikan.moe/) (MAL wrapper), [Shikimori](https://shikimori.one/api/doc), [AniList GraphQL](https://anilist.gitbook.io/anilist-apiv2-docs/) (fallback), Google Translate (free proxy) |
 | Testing | JUnit 5, Mockito, MockMvc |
 | Build | Maven |
 
