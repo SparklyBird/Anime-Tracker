@@ -1225,6 +1225,7 @@ async function populateDetail(anime) {
         
         const newRating = isLeftHalf ? (i - 0.5) : i;
         renderDetailStars(newRating);
+        anime.rating = newRating;
         await updateAnimeRating(anime.id, newRating);
       });
       
