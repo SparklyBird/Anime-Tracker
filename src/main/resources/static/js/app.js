@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSearch();
   setupSort();
   document.getElementById('addBtn').addEventListener('click', openAddModal);
+  document.getElementById('exitBtn').addEventListener('click', confirmExit);
   document.getElementById('fRussianName').addEventListener('input', e => { e.target.style.border=''; e.target.title=''; });
   // Close export menu when clicking outside
   document.addEventListener('click', e => {
@@ -574,12 +575,12 @@ async function saveAnime() {
         const sec = STATUS_CFG[relevant[0].status]?.label || relevant[0].status;
         const dupe = document.getElementById('dupeWarning');
         const dupeText = document.getElementById('dupeWarningText');
-        dupeText.textContent = `"${name}" уже есть в разделе "${sec}". Сохранить всё равно?`;
+        dupeText.textContent = `"${name}" already exists in section "${sec}". Save anyways?`;
         dupe.classList.remove('hidden');
         const footer = dupe.closest('.modal-box').querySelector('.modal-footer');
         footer.innerHTML = `
-          <button class="btn-ghost" onclick="hideDupeWarning()">Отмена</button>
-          <button class="btn-primary" onclick="confirmSave()">Да, добавить</button>`;
+          <button class="btn-ghost" onclick="hideDupeWarning()">Cancel</button>
+          <button class="btn-primary" onclick="confirmSave()">Yes, add</button>`;
         return;
       }
     } catch {}
@@ -1259,7 +1260,7 @@ async function populateDetail(anime) {
   document.getElementById('detailGenres').innerHTML=(anime.genres||[]).map(g=>`<span class="detail-genre-tag">${esc(g)}</span>`).join('');
   document.getElementById('detailMoveSelect').value=anime.status;
   document.getElementById('detailEditBtn').onclick=()=>{ closeModal('detailModal'); openEditModal(anime); };
-  document.getElementById('detailDeleteBtn').onclick=()=>confirmDelete(anime.id,anime.russianName);
+  document.getElementById('detailDeleteBtn').onclick=()=>confirmDelete(anime.id,anime.russianName,anime.status);
   
   // ═══ FAVORITE TOGGLE BUTTON ═══
   await updateFavoriteButton(anime);
@@ -1758,12 +1759,41 @@ async function quickAutoFill(id, btnEl) {
 }
 
 // ─── DELETE ───────────────────────────────────────────────
-function confirmDelete(id, name) {
+function confirmExit() {
+  document.getElementById('confirmMsg').textContent = 'Exit the app?';
+  document.getElementById('confirmOkBtn').textContent = 'Exit';
+  document.getElementById('confirmOkBtn').onclick = async () => {
+    closeModal('confirmDialog');
+    try {
+      await fetch('/api/system/shutdown', { method: 'POST' });
+    } catch {}
+    window.close();
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:1.2rem;color:var(--muted);">App stopped. You can close this window.</div>';
+  };
+  openModal('confirmDialog');
+}
+function confirmDelete(id, name, status) {
   document.getElementById('confirmMsg').textContent = `Delete "${name}"?`;
+  document.getElementById('confirmOkBtn').textContent = 'Delete';
   document.getElementById('confirmOkBtn').onclick = async () => {
     try {
       await api('DELETE', `/api/anime/${id}`);
-      showToast('Deleted!', 'success');
+
+      let alsoRemovedFavorite = false;
+      if (status !== 'FAVORITE') {
+        try {
+          const matches = await api('GET', `/api/anime/search?q=${encodeURIComponent(name)}`);
+          const favoriteEntry = matches.find(a =>
+            a.status === 'FAVORITE' && a.russianName.toLowerCase() === name.toLowerCase()
+          );
+          if (favoriteEntry) {
+            await api('DELETE', `/api/anime/${favoriteEntry.id}`);
+            alsoRemovedFavorite = true;
+          }
+        } catch {}
+      }
+
+      showToast(alsoRemovedFavorite ? 'Deleted (also removed from Favorites)!' : 'Deleted!', 'success');
       closeModal('confirmDialog'); closeModal('detailModal');
       await Promise.all([loadCounts(), refreshList()]);
     } catch { showError('Delete failed'); }

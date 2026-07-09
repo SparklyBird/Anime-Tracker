@@ -282,6 +282,7 @@ body {
   border: none; border-radius: var(--radius);
   padding: .52rem 1.1rem; cursor: pointer; font-size: .9rem;
   transition: background .15s; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
 }
 .btn-primary:hover { background: var(--accent-h); }
 .btn-accent {
