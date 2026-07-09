@@ -454,7 +454,7 @@ input[type=text], input[type=number], select, textarea {
   transition: border-color .2s; font-family: inherit; width: 100%;
 }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
-textarea { resize: none; min-height: 120px; overflow: hidden; text-align: justify; }
+textarea { resize: none; min-height: 120px; max-height: 220px; overflow-y: auto; text-align: justify; }
 input[type=file] { color: var(--text2); padding: .3rem; }
 
 /* ─── GENRE GRID ──────────────────────────────────────── */
