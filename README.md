@@ -13,15 +13,15 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 
 ### **Main list view:**
 
-<img width="600" alt="Main list view" src="https://github.com/user-attachments/assets/4dc53672-f268-4d00-b025-fbee23431159" />
+<img width="600" alt="Main list view" src="https://github.com/user-attachments/assets/7ec5e30f-14c7-41b6-88f0-1ce027cffebe" />
 
 ### **Detail modal:**
 
-<img width="350" alt="Detail modal" src="https://github.com/user-attachments/assets/cc4eb9de-a215-4e4d-83ef-f9161f9aa479" />
+<img width="350" alt="Detail modal" src="https://github.com/user-attachments/assets/5868ae78-da67-413f-b65a-0df22249bf9c" />
 
 ### **Edit modal with MAL search:**
 
-<img width="450" alt="Edit modal" src="https://github.com/user-attachments/assets/2e813210-10f2-4e71-a8aa-f41ebe95de32" />
+<img width="450" alt="Edit modal" src="https://github.com/user-attachments/assets/7cf3e741-9f8f-45db-bd49-2fd63bbddd69" />
 
 ---
 
@@ -29,6 +29,7 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 
 - **5 sections** — Watching, Will Watch, Finished, Favorite, Dropped
 - **⭐ Favorite toggle** — add or remove anime from Favorites with one click in the detail modal
+- **🗑️ Cascade delete** — removing anime from any list also removes its paired Favorites entry automatically
 - **📊 Rating sync** — ratings automatically sync between main list and Favorites entry
 - **🔍 Grouped search** — search results organized by section with color-coded headers
 - **Auto-fill from MAL** — type a Russian title, routes through Shikimori → romaji → MyAnimeList to fetch poster, genres, synopsis, episode count and score automatically
@@ -40,6 +41,7 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 - **Duplicate protection** — prevents adding the same anime twice (with a Favorites exception)
 - **Infinite scroll** — loads pages on demand, no pagination clicks
 - **Persistent tab** — remembers which section you were on after refresh
+- **⏻ Exit button** — gracefully shuts down the app from the browser, safely releasing the database file
 
 ---
 
@@ -113,7 +115,7 @@ If you fork this for your own use, genres and UI labels can be swapped to any la
 src/
 ├── main/
 │   ├── java/com/animetracker/
-│   │   ├── controller/       # REST endpoints (AnimeController, JikanController)
+│   │   ├── controller/       # REST endpoints (AnimeController, JikanController, SystemController)
 │   │   ├── service/          # Business logic
 │   │   ├── repository/       # Spring Data JPA
 │   │   ├── model/            # Anime entity, AnimeStatus enum
