@@ -2,6 +2,7 @@ package com.animetracker.controller;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,21 +17,21 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/jikan")
-public class JikanController {
+@RequestMapping("/api/tenrai")
+public class TenraiController {
 
-    private static final Logger log = LoggerFactory.getLogger(JikanController.class);
+    private static final Logger log = LoggerFactory.getLogger(TenraiController.class);
 
-    private static final String JIKAN_SEARCH  = "https://api.jikan.moe/v4/anime?q={q}&limit=8&sfw=true";
-    private static final String JIKAN_DETAIL  = "https://api.jikan.moe/v4/anime/{id}";
+    private static final String TENRAI_SEARCH = "https://api.tenrai.org/v1/anime?q={q}&limit=8&sfw=true";
+    private static final String TENRAI_DETAIL = "https://api.tenrai.org/v1/anime/{id}";
     private static final String SHIKIMORI_SEARCH = "https://shikimori.one/api/animes?search={q}&limit=10&order=popularity";
     private static final String ANILIST_GRAPHQL = "https://graphql.anilist.co";
     private static final String GTRANSLATE    =
-        "https://translate.googleapis.com/translate_a/single?client=gtx&sl={sl}&tl={tl}&dt=t&q={q}";
+            "https://translate.googleapis.com/translate_a/single?client=gtx&sl={sl}&tl={tl}&dt=t&q={q}";
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    // ── Shikimori search (Russian queries, IDs = MAL IDs) ────────────────────
+    // Executes an external query against the Shikimori anime database and enforces a custom User-Agent header required by the remote service.
     @GetMapping("/shikimori")
     public ResponseEntity<String> shikimoriSearch(@RequestParam String q) {
         log.info("Shikimori search: {}", q);
@@ -39,39 +40,42 @@ public class JikanController {
             headers.set("User-Agent", "AnimeTracker/1.0");
             org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(headers);
             var response = restTemplate.exchange(SHIKIMORI_SEARCH,
-                org.springframework.http.HttpMethod.GET, entity, String.class, q);
+                    org.springframework.http.HttpMethod.GET, entity, String.class, q);
             return ResponseEntity.ok(response.getBody());
         } catch (Exception e) {
             log.error("Shikimori search error: {}", e.getMessage());
-            return ResponseEntity.ok("[]");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body("{\"error\":\"Shikimori API is temporarily unavailable.\"}");
         }
     }
 
-    // ── Jikan search ─────────────────────────────────────────────────────────
+    // Queries the Tenrai endpoint for anime titles matching the search parameter
     @GetMapping("/search")
     public ResponseEntity<String> search(@RequestParam String q) {
-        log.info("Jikan search: {}", q);
+        log.info("Tenrai search: {}", q);
         try {
-            return ResponseEntity.ok(restTemplate.getForObject(JIKAN_SEARCH, String.class, q));
+            return ResponseEntity.ok(restTemplate.getForObject(TENRAI_SEARCH, String.class, q));
         } catch (Exception e) {
-            log.error("Jikan search error: {}", e.getMessage());
-            return ResponseEntity.ok("{\"data\":[]}");
+            log.error("Tenrai search error: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body("{\"error\":\"Tenrai API is temporarily unavailable.\"}");
         }
     }
 
-    // ── Jikan full details (includes all language titles) ─────────────────────
+    // Fetches comprehensive metadata for a specific anime identifier
     @GetMapping("/details/{id}")
     public ResponseEntity<String> details(@PathVariable int id) {
-        log.info("Jikan details: {}", id);
+        log.info("Tenrai details: {}", id);
         try {
-            return ResponseEntity.ok(restTemplate.getForObject(JIKAN_DETAIL, String.class, id));
+            return ResponseEntity.ok(restTemplate.getForObject(TENRAI_DETAIL, String.class, id));
         } catch (Exception e) {
-            log.error("Jikan details error: {}", e.getMessage());
-            return ResponseEntity.ok("{\"data\":null}");
+            log.error("Tenrai details error: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body("{\"error\":\"Tenrai API is temporarily unavailable.\"}");
         }
     }
 
-    // ── Google Translate (free, no key) ───────────────────────────────────────
+    // Interfaces with the free Google Translate endpoint to convert text strings
     @GetMapping("/translate")
     public ResponseEntity<String> translate(
             @RequestParam String q,
@@ -79,11 +83,11 @@ public class JikanController {
             @RequestParam(defaultValue = "ru") String tl) {
         String translated = translateText(q, sl, tl);
         return ResponseEntity.ok(
-            "{\"responseData\":{\"translatedText\":\"" +
-            translated.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}}");
+                "{\"responseData\":{\"translatedText\":\"" +
+                        translated.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}}");
     }
 
-    // ── Title + synopsis via Google Translate (free) ──────────────────────────
+    // Processes and translates incoming anime title and synopsis payloads into Russian
     @PostMapping("/ai-process")
     public ResponseEntity<Map<String, String>> process(@RequestBody Map<String, String> body) {
         String title    = body.getOrDefault("title",   "").trim();
@@ -91,7 +95,6 @@ public class JikanController {
 
         String ruTitle = translateText(title, "en", "ru");
 
-        // Translate first 2 sentences of synopsis → short Russian description
         String ruSynopsis = "";
         if (!synopsis.isBlank()) {
             String short2 = firstTwoSentences(synopsis);
@@ -102,51 +105,53 @@ public class JikanController {
         return ResponseEntity.ok(Map.of("ruTitle", ruTitle, "ruSynopsis", ruSynopsis));
     }
 
-    // ── AniList GraphQL Search (fallback when Jikan is down) ──────────────────
+    //Queries the AniList GraphQL API as a reliable fallback for search indexing
     @GetMapping("/anilist/search")
     public ResponseEntity<String> anilistSearch(@RequestParam String q) {
         log.info("AniList search: {}", q);
         String query = "query ($search: String) { Page(perPage: 8) { media(search: $search, type: ANIME, sort: POPULARITY_DESC) { " +
-            "id title { english romaji native } coverImage { large } description episodes averageScore seasonYear genres } } }";
+                "id title { english romaji native } coverImage { large } description episodes averageScore seasonYear genres } } }";
         Map<String, Object> variables = Map.of("search", q);
         Map<String, Object> requestBody = Map.of("query", query, "variables", variables);
-        
+
         try {
             org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
             headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-            org.springframework.http.HttpEntity<Map<String, Object>> entity = 
-                new org.springframework.http.HttpEntity<>(requestBody, headers);
+            org.springframework.http.HttpEntity<Map<String, Object>> entity =
+                    new org.springframework.http.HttpEntity<>(requestBody, headers);
             var response = restTemplate.postForObject(ANILIST_GRAPHQL, entity, String.class);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("AniList search error: {}", e.getMessage());
-            return ResponseEntity.ok("{\"data\":null}");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body("{\"error\":\"AniList API is temporarily unavailable.\"}");
         }
     }
 
-    // ── AniList GraphQL Details (fallback when Jikan is down) ─────────────────
+    // Fetches detailed media nodes via the AniList GraphQL API using a unique identifier
     @GetMapping("/anilist/details/{id}")
     public ResponseEntity<String> anilistDetails(@PathVariable int id) {
         log.info("AniList details: {}", id);
         String query = "query ($id: Int) { Media(id: $id, type: ANIME) { " +
-            "id title { english romaji native } coverImage { large } description episodes averageScore seasonYear genres } }";
+                "id title { english romaji native } coverImage { large } description episodes averageScore seasonYear genres } }";
         Map<String, Object> variables = Map.of("id", id);
         Map<String, Object> requestBody = Map.of("query", query, "variables", variables);
-        
+
         try {
             org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
             headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-            org.springframework.http.HttpEntity<Map<String, Object>> entity = 
-                new org.springframework.http.HttpEntity<>(requestBody, headers);
+            org.springframework.http.HttpEntity<Map<String, Object>> entity =
+                    new org.springframework.http.HttpEntity<>(requestBody, headers);
             var response = restTemplate.postForObject(ANILIST_GRAPHQL, entity, String.class);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("AniList details error: {}", e.getMessage());
-            return ResponseEntity.ok("{\"data\":null}");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body("{\"error\":\"AniList API is temporarily unavailable.\"}");
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    //Helper method to parse and translate raw string arrays returned by the translation API
     private String translateText(String text, String sl, String tl) {
         if (text == null || text.isBlank()) return "";
         try {
@@ -166,9 +171,10 @@ public class JikanController {
         } catch (Exception e) {
             log.warn("translateText failed: {}", e.getMessage());
         }
-        return text; // return original as fallback
+        return text;
     }
 
+    //Utility method that truncates a narrative block to the first two complete sentences
     private String firstTwoSentences(String text) {
         String[] parts = text.split("(?<=[.!?])\\s+");
         StringBuilder sb = new StringBuilder();
