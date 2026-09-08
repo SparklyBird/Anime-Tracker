@@ -105,7 +105,7 @@ public class TenraiController {
         return ResponseEntity.ok(Map.of("ruTitle", ruTitle, "ruSynopsis", ruSynopsis));
     }
 
-    //Queries the AniList GraphQL API as a reliable fallback for search indexing
+    // Queries the AniList GraphQL API as a reliable fallback for search indexing
     @GetMapping("/anilist/search")
     public ResponseEntity<String> anilistSearch(@RequestParam String q) {
         log.info("AniList search: {}", q);
@@ -151,7 +151,7 @@ public class TenraiController {
         }
     }
 
-    //Helper method to parse and translate raw string arrays returned by the translation API
+    // Helper method to parse and translate raw string arrays returned by the translation API
     private String translateText(String text, String sl, String tl) {
         if (text == null || text.isBlank()) return "";
         try {
@@ -174,7 +174,7 @@ public class TenraiController {
         return text;
     }
 
-    //Utility method that truncates a narrative block to the first two complete sentences
+    // Utility method that truncates a narrative block to the first two complete sentences
     private String firstTwoSentences(String text) {
         String[] parts = text.split("(?<=[.!?])\\s+");
         StringBuilder sb = new StringBuilder();
