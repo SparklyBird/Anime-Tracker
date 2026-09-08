@@ -33,7 +33,7 @@ Track what you're watching, finished, dropped, or plan to watch — with posters
 - **📊 Rating sync** — ratings automatically sync between main list and Favorites entry
 - **🔍 Grouped search** — search results organized by section with color-coded headers
 - **Auto-fill from MAL** — type a Russian title, routes through Shikimori → romaji → MyAnimeList to fetch poster, genres, synopsis, episode count and score automatically
-- **🔄 AniList fallback** — if Jikan/MAL is unavailable, automatically retries the search via AniList GraphQL
+- **🔄 AniList fallback** — if Tenrai/MAL is unavailable, automatically retries the search via AniList GraphQL
 - **⚡ Quick auto-fill** — one-click fill per card without opening any modal
 - **Bulk import** — paste a plain text list of titles, or import an existing CSV / JSON backup
 - **Export** — save your full list as CSV, JSON, or TXT at any time
@@ -103,7 +103,7 @@ If you fork this for your own use, genres and UI labels can be swapped to any la
 | Backend | Spring Boot 3, Spring Data JPA |
 | Database | H2 (file-based, embedded) |
 | Frontend | Vanilla JS, HTML5, CSS3 |
-| APIs | [Jikan v4](https://jikan.moe/) (MAL wrapper), [Shikimori](https://shikimori.one/api/doc), [AniList GraphQL](https://anilist.gitbook.io/anilist-apiv2-docs/) (fallback), Google Translate (free proxy) |
+| APIs | Tenrai API (MAL wrapper), [Shikimori](https://shikimori.one/api/doc), [AniList GraphQL](https://anilist.gitbook.io/anilist-apiv2-docs/) (fallback), Google Translate (free proxy) |
 | Testing | JUnit 5, Mockito, MockMvc |
 | Build | Maven |
 
@@ -115,7 +115,7 @@ If you fork this for your own use, genres and UI labels can be swapped to any la
 src/
 ├── main/
 │   ├── java/com/animetracker/
-│   │   ├── controller/       # REST endpoints (AnimeController, JikanController, SystemController)
+│   │   ├── controller/       # REST endpoints (AnimeController, TenraiController, SystemController)
 │   │   ├── service/          # Business logic
 │   │   ├── repository/       # Spring Data JPA
 │   │   ├── model/            # Anime entity, AnimeStatus enum
