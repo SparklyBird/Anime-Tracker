@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Anime Tracker</title>
-  <link rel="stylesheet" href="/css/style.css?v=42"/>
+  <link rel="stylesheet" href="/css/style.css?v=44"/>
 </head>
 <body>
 
@@ -77,7 +77,9 @@
     </div>
     <!-- Import -->
     <button class="btn-filter" onclick="document.getElementById('importFileInput').click()">↑ Import</button>
-    <input type="file" id="importFileInput" accept=".csv,.txt,.json" style="display:none" onchange="importFromFile(this)"/>
+    <input type="file" id="importFileInput" accept=".csv,.txt,.json" style="display:none" onchange="importList(event)"/>
+    <!-- Bulk paste -->
+    <button class="btn-filter" onclick="openBulkModal()" title="Paste a plain list of titles">≡ Paste list</button>
     <button id="filterToggleBtn" class="btn-filter" onclick="toggleFilter()">
       <span id="filterIcon">⚙</span> Filters <span id="filterActiveDot" class="filter-active-dot hidden"></span>
     </button>
@@ -239,11 +241,11 @@
     <!-- RIGHT: MAL Search panel (Russian → Shikimori → MAL auto-routing) -->
     <div class="mal-panel">
       <div id="malSearchPanel">
-        <div class="jikan-row">
-          <input id="jikanInput" type="text" placeholder="Search anime (RU / EN / JP)…" autocomplete="off"/>
-          <button id="jikanBtn" class="btn-accent" onclick="doJikanSearch()">Search MAL</button>
+        <div class="tenrai-row">
+          <input id="tenraiInput" type="text" placeholder="Search anime (RU / EN / JP)…" autocomplete="off"/>
+          <button id="tenraiBtn" class="btn-accent" onclick="doTenraiSearch()">Search MAL</button>
         </div>
-        <div id="jikanResults" class="jikan-results hidden"></div>
+        <div id="tenraiResults" class="tenrai-results hidden"></div>
       </div>
     </div>
 
@@ -295,6 +297,34 @@
   </div>
 </div>
 
+<!-- BULK PASTE MODAL -->
+<div id="bulkModal" class="modal-backdrop hidden">
+  <div class="modal-box modal-bulk">
+    <div class="modal-header">
+      <h2>Paste a list of titles</h2>
+      <button class="modal-close" onclick="closeModal('bulkModal')">✕</button>
+    </div>
+    <div class="field-row">
+      <label>Add to section</label>
+      <select id="bulkStatus">
+        <option value="WATCHING">Watching</option>
+        <option value="WILL_WATCH">Will Watch</option>
+        <option value="WATCHED">Finished</option>
+        <option value="FAVORITE">Favorite</option>
+        <option value="DROPPED">Dropped</option>
+      </select>
+    </div>
+    <div class="field-row" style="margin-top:.9rem;">
+      <label>One title per line <small>(duplicates are skipped automatically)</small></label>
+      <textarea id="bulkText" rows="10" placeholder="Наруто&#10;Блич&#10;Ван-Пис"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeModal('bulkModal')">Cancel</button>
+      <button class="btn-primary" onclick="submitBulkPaste()">Add</button>
+    </div>
+  </div>
+</div>
+
 <!-- CONFIRM -->
 <div id="confirmDialog" class="modal-backdrop hidden">
   <div class="modal-box modal-sm">
@@ -308,6 +338,6 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="/js/app.js?v=51"></script>
+<script src="/js/app.js?v=53"></script>
 </body>
 </html>

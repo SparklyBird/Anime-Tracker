@@ -7,6 +7,8 @@ import com.animetracker.service.AnimeService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,8 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
-import org.springframework.data.domain.Page;
 import java.util.Map;
 
 @RestController
@@ -71,6 +73,45 @@ public class AnimeController {
     public ResponseEntity<List<AnimeResponse>> bulkCreate(@RequestBody List<AnimeRequest> requests) {
         log.info("POST /api/anime/bulk - {} entries", requests.size());
         return ResponseEntity.ok(animeService.bulkCreate(requests));
+    }
+
+    @GetMapping("/export/{format}")
+    public ResponseEntity<byte[]> export(@PathVariable String format) {
+        log.info("GET /api/anime/export/{}", format);
+        String body;
+        try {
+            body = animeService.exportAll(format);
+        } catch (IllegalArgumentException e) {
+            log.warn("Rejected export request: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+
+        String lower = format.toLowerCase();
+        MediaType contentType;
+        if ("json".equals(lower)) {
+            contentType = MediaType.APPLICATION_JSON;
+        } else if ("csv".equals(lower)) {
+            contentType = MediaType.parseMediaType("text/csv; charset=UTF-8");
+            body = "\uFEFF" + body;   // BOM so Excel reads the Cyrillic titles correctly
+        } else {
+            contentType = MediaType.parseMediaType("text/plain; charset=UTF-8");
+        }
+
+        return ResponseEntity.ok()
+                .contentType(contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"anime-tracker." + lower + "\"")
+                .body(body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @PostMapping("/import")
+    public ResponseEntity<Map<String, Object>> importFile(@RequestParam("file") MultipartFile file)
+            throws IOException {
+        log.info("POST /api/anime/import - {} ({} bytes)", file.getOriginalFilename(), file.getSize());
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(animeService.importFile(file));
     }
 
     @DeleteMapping("/dedupe")

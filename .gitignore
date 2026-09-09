@@ -36,3 +36,6 @@ Thumbs.db
 # ── Environment / secrets ─────────────────────────────────
 .env
 *.env
+
+# Local DB backups (personal data)
+DB backup/

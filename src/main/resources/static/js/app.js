@@ -101,8 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.modal-backdrop').forEach(el =>
     el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); }));
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') ['confirmDialog','detailModal','editModal'].forEach(closeModal);
-    if (e.key === 'Enter' && document.activeElement.id === 'jikanInput') doJikanSearch();
+    if (e.key === 'Escape') ['confirmDialog','detailModal','editModal','bulkModal'].forEach(closeModal);
+    if (e.key === 'Enter' && document.activeElement.id === 'tenraiInput') doTenraiSearch();
   });
   // Rating filter buttons
   document.querySelectorAll('.rating-filter-btn').forEach(btn =>
@@ -516,7 +516,7 @@ function openModal(id) { document.getElementById(id).classList.remove('hidden');
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
 function openAddModal() {
-  S.editingId=null; clearForm(); clearJikan();
+  S.editingId=null; clearForm(); clearTenrai();
   document.getElementById('editModalTitle').textContent='Add Anime';
   document.getElementById('fStatus').value=S.status;
   document.getElementById('dupeWarning').classList.add('hidden');
@@ -533,7 +533,7 @@ async function openEditModalById(id) {
 }
 
 function openEditModal(anime) {
-  S.editingId=anime.id; clearJikan();
+  S.editingId=anime.id; clearTenrai();
   document.getElementById('editModalTitle').textContent='Edit Anime';
   document.getElementById('fRussianName').value=anime.russianName||'';
   document.getElementById('fJapaneseName').value=anime.japaneseName||'';
@@ -813,11 +813,11 @@ function renderFormStars() {
   attachStarListeners();
 }
 
-// ─── JIKAN (MAL) ──────────────────────────────────────────
-function clearJikan() {
-  document.getElementById('jikanInput').value='';
-  document.getElementById('jikanResults').classList.add('hidden');
-  document.getElementById('jikanResults').innerHTML='';
+// ─── TENRAI (MAL) ──────────────────────────────────────────
+function clearTenrai() {
+  document.getElementById('tenraiInput').value='';
+  document.getElementById('tenraiResults').classList.add('hidden');
+  document.getElementById('tenraiResults').innerHTML='';
   S._russianQuery=null;
 }
 
@@ -827,24 +827,24 @@ function isCyrillic(text) {
 
 async function translateRuToEn(text) {
   try {
-    const res = await fetch(`/api/jikan/translate?q=${encodeURIComponent(text)}&langpair=ru|en`);
+    const res = await fetch(`/api/tenrai/translate?q=${encodeURIComponent(text)}&sl=ru&tl=en`);
     const data = await res.json();
     const translated = data.responseData?.translatedText;
     return (translated && translated !== text && !/МАМА МИА/i.test(translated)) ? translated : text;
   } catch { return text; }
 }
 
-async function doJikanSearch() {
-  const rawQ = document.getElementById('jikanInput').value.trim();
+async function doTenraiSearch() {
+  const rawQ = document.getElementById('tenraiInput').value.trim();
   if (!rawQ) return;
-  const btn = document.getElementById('jikanBtn');
+  const btn = document.getElementById('tenraiBtn');
   btn.disabled = true;
 
   if (isCyrillic(rawQ)) {
     try {
       // Step 1: search Shikimori with Russian query → get official Russian title + romaji name
       btn.textContent = '↻ Shikimori…';
-      const shikiResult = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(rawQ)}`).then(r => r.json());
+      const shikiResult = await fetch(`/api/tenrai/shikimori?q=${encodeURIComponent(rawQ)}`).then(r => r.json());
       let searchTerm = rawQ;  // fallback
       let shikiMalId = null;
       if (shikiResult && shikiResult.length > 0) {
@@ -864,16 +864,16 @@ async function doJikanSearch() {
 
       btn.textContent = '…';
 
-      // Step 2: search MAL/Jikan with romaji name (+ direct ID fetch if we have shikiMalId)
+      // Step 2: search MAL/Tenrai with romaji name (+ direct ID fetch if we have shikiMalId)
       const fetches = [
-        fetch(`/api/jikan/search?q=${encodeURIComponent(searchTerm)}`).then(r => r.json()),
+        fetch(`/api/tenrai/search?q=${encodeURIComponent(searchTerm)}`).then(r => r.json()),
         searchTerm !== rawQ
-          ? fetch(`/api/jikan/search?q=${encodeURIComponent(rawQ)}`).then(r => r.json())
+          ? fetch(`/api/tenrai/search?q=${encodeURIComponent(rawQ)}`).then(r => r.json())
           : Promise.resolve({ data: [] }),
       ];
       // If Shikimori gave us the MAL ID, also fetch that entry directly so it's always present
       if (shikiMalId) {
-        fetches.push(fetch(`/api/jikan/details/${shikiMalId}`).then(r => r.json()).then(d => ({ data: d.data ? [d.data] : [] })));
+        fetches.push(fetch(`/api/tenrai/details/${shikiMalId}`).then(r => r.json()).then(d => ({ data: d.data ? [d.data] : [] })));
       }
 
       const settled = await Promise.allSettled(fetches);
@@ -897,11 +897,11 @@ async function doJikanSearch() {
         merged.sort((a, b) => (b.score || 0) - (a.score || 0));
       }
       
-      // ══ ANILIST FALLBACK if Jikan returned nothing ══
+      // ══ ANILIST FALLBACK if Tenrai returned nothing ══
       if (merged.length === 0) {
         btn.textContent = '↻ AniList…';
         try {
-          const anilistRes = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(searchTerm)}`);
+          const anilistRes = await fetch(`/api/tenrai/anilist/search?q=${encodeURIComponent(searchTerm)}`);
           const anilistData = await anilistRes.json();
           if (anilistData?.data?.Page?.media) {
             const anilistAnime = anilistData.data.Page.media.map(a => ({
@@ -916,8 +916,8 @@ async function doJikanSearch() {
               year: a.seasonYear,
               genres: (a.genres || []).map(g => ({ name: g }))
             }));
-            showToast('✓ Found via AniList (Jikan is down)', 'success');
-            showJikanResults(anilistAnime);
+            showToast('✓ Found via AniList (Tenrai is down)', 'success');
+            showTenraiResults(anilistAnime);
             btn.textContent = 'Search MAL'; btn.disabled = false;
             return;
           }
@@ -926,7 +926,7 @@ async function doJikanSearch() {
         }
       }
       
-      showJikanResults(merged);
+      showTenraiResults(merged);
 
     } catch { showError('MAL search failed'); }
     finally { btn.textContent = 'Search MAL'; btn.disabled = false; }
@@ -935,14 +935,14 @@ async function doJikanSearch() {
     // Plain English/romaji search — single query
     btn.textContent = '…';
     try {
-      const data = await (await fetch(`/api/jikan/search?q=${encodeURIComponent(rawQ)}`)).json();
+      const data = await (await fetch(`/api/tenrai/search?q=${encodeURIComponent(rawQ)}`)).json();
       const results = data.data || [];
       
-      // ══ ANILIST FALLBACK if Jikan returned nothing ══
+      // ══ ANILIST FALLBACK if Tenrai returned nothing ══
       if (results.length === 0) {
         btn.textContent = '↻ AniList…';
         try {
-          const anilistRes = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(rawQ)}`);
+          const anilistRes = await fetch(`/api/tenrai/anilist/search?q=${encodeURIComponent(rawQ)}`);
           const anilistData = await anilistRes.json();
           if (anilistData?.data?.Page?.media) {
             const anilistAnime = anilistData.data.Page.media.map(a => ({
@@ -957,8 +957,8 @@ async function doJikanSearch() {
               year: a.seasonYear,
               genres: (a.genres || []).map(g => ({ name: g }))
             }));
-            showToast('✓ Found via AniList (Jikan is down)', 'success');
-            showJikanResults(anilistAnime);
+            showToast('✓ Found via AniList (Tenrai is down)', 'success');
+            showTenraiResults(anilistAnime);
             btn.textContent = 'Search MAL'; btn.disabled = false;
             return;
           }
@@ -967,7 +967,7 @@ async function doJikanSearch() {
         }
       }
       
-      showJikanResults(results);
+      showTenraiResults(results);
     } catch { showError('MAL search failed'); }
     finally { btn.textContent = 'Search MAL'; btn.disabled = false; }
   }
@@ -975,15 +975,15 @@ async function doJikanSearch() {
 
 async function translateEnToRu(text) {
   try {
-    const res = await fetch(`/api/jikan/translate?q=${encodeURIComponent(text)}&langpair=en|ru`);
+    const res = await fetch(`/api/tenrai/translate?q=${encodeURIComponent(text)}&sl=en&tl=ru`);
     const data = await res.json();
     const translated = data.responseData?.translatedText;
     return (translated && translated !== text && !/МАМА МИА/i.test(translated)) ? translated : null;
   } catch { return null; }
 }
 
-function showJikanResults(items) {
-  const box = document.getElementById('jikanResults');
+function showTenraiResults(items) {
+  const box = document.getElementById('tenraiResults');
   if (!items.length) {
     box.innerHTML = '<span style="color:var(--muted);font-size:.8rem">No results — try the Japanese/English title</span>';
     box.classList.remove('hidden'); return;
@@ -996,26 +996,26 @@ function showJikanResults(items) {
     const eps   = item.episodes ? item.episodes + ' ep' : '';
     const score = item.score ? '★' + item.score : '';
     const meta  = [year, eps, score].filter(Boolean).join(' · ');
-    return `<div class="jikan-card" data-i="${i}">
+    return `<div class="tenrai-card" data-i="${i}">
       ${img ? `<img src="${esc(img)}" alt="">` : '<div style="width:32px;flex-shrink:0"></div>'}
-      <div class="jikan-card-info">
-        <div class="jikan-title">${esc(title)}</div>
-        ${meta ? `<div class="jikan-sub">${esc(meta)}</div>` : ''}
+      <div class="tenrai-card-info">
+        <div class="tenrai-title">${esc(title)}</div>
+        ${meta ? `<div class="tenrai-sub">${esc(meta)}</div>` : ''}
       </div>
     </div>`;
   }).join('');
-  box.querySelectorAll('.jikan-card').forEach((card,i) =>
-    card.addEventListener('click', () => fillFromJikan(items[i])));
+  box.querySelectorAll('.tenrai-card').forEach((card,i) =>
+    card.addEventListener('click', () => fillFromTenrai(items[i])));
 }
 
-async function fillFromJikan(item) {
+async function fillFromTenrai(item) {
   const malId   = item.mal_id;
   const romaji  = item.title || '';
 
   // Fetch FULL details to get all language titles (search endpoint omits some)
   let fullItem = item;
   try {
-    const det = await (await fetch(`/api/jikan/details/${malId}`)).json();
+    const det = await (await fetch(`/api/tenrai/details/${malId}`)).json();
     if (det.data) fullItem = det.data;
   } catch {}
 
@@ -1053,7 +1053,7 @@ async function fillFromJikan(item) {
       // First try AI (handles both title + short synopsis in one call)
       let aiDone = false;
       try {
-        const res = await fetch('/api/jikan/ai-process', {
+        const res = await fetch('/api/tenrai/ai-process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title, synopsis })
@@ -1094,7 +1094,7 @@ async function fillFromJikan(item) {
   if (imgUrl) { setImgMode('url'); document.getElementById('imgUrl').value = imgUrl; previewUrl(imgUrl); }
   genres.forEach(g => { const cb = document.querySelector(`.genre-cb[value="${g}"]`); if (cb) cb.checked = true; });
 
-  clearJikan();
+  clearTenrai();
   showToast('Auto-filled from MAL!', 'success');
 }
 
@@ -1128,10 +1128,13 @@ function closeExportMenu() {
 async function exportList(format) {
   closeExportMenu();
   try {
-    const blob=await (await fetch(`/api/anime/export/${format}`)).blob();
+    const res=await fetch(`/api/anime/export/${format}`);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);   // fetch does not throw on 4xx/5xx
+    const blob=await res.blob();
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url; a.download=`anime-tracker.${format}`; a.click();
+    URL.revokeObjectURL(url);
     showToast('Exported!','success');
   } catch { showError('Export failed'); }
 }
@@ -1140,11 +1143,36 @@ async function importList(event) {
   if(!file) return;
   const fd=new FormData(); fd.append('file',file);
   try {
-    await fetch('/api/anime/import',{method:'POST',body:fd});
+    const res=await fetch('/api/anime/import',{method:'POST',body:fd});
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r=await res.json();
     event.target.value='';
-    showToast('Imported!','success');
+    showToast(`Imported ${r.imported}${r.skipped ? `, skipped ${r.skipped} duplicate${r.skipped===1?'':'s'}` : ''}`,'success');
     await Promise.all([loadCounts(), refreshList()]);
-  } catch { showError('Import failed'); }
+  } catch {
+    event.target.value='';
+    showError('Import failed');
+  }
+}
+
+// ─── BULK PASTE ───────────────────────────────────────────
+function openBulkModal() {
+  document.getElementById('bulkText').value='';
+  document.getElementById('bulkStatus').value=S.status;
+  openModal('bulkModal');
+}
+async function submitBulkPaste() {
+  const status=document.getElementById('bulkStatus').value;
+  const titles=document.getElementById('bulkText').value
+    .split(/\r?\n/).map(t=>t.trim()).filter(Boolean);
+  if(!titles.length){ showError('Nothing to add'); return; }
+  try {
+    const created=await api('POST','/api/anime/bulk',titles.map(t=>({russianName:t,status})));
+    const skipped=titles.length-created.length;
+    closeModal('bulkModal');
+    showToast(`Added ${created.length}${skipped ? `, skipped ${skipped} duplicate${skipped===1?'':'s'}` : ''}`,'success');
+    await Promise.all([loadCounts(), refreshList()]);
+  } catch { showError('Bulk add failed'); }
 }
 
 // ─── DETAIL MODAL ─────────────────────────────────────────
@@ -1422,7 +1450,7 @@ async function fetchFromMAL() {
       let fetchTerm = searchQ;
       let shikiMalId = null;
       try {
-        const shikiItems = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+        const shikiItems = await fetch(`/api/tenrai/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
         if (shikiItems && shikiItems.length > 0) {
           const best = shikiItems[0];
           if (best.name) { fetchTerm = best.name; shikiMalId = best.id; }
@@ -1433,10 +1461,10 @@ async function fetchFromMAL() {
 
       btn.textContent = '↻ Searching…';
       const fetches = [
-        fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()),
+        fetch(`/api/tenrai/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()),
       ];
       if (shikiMalId) {
-        fetches.push(fetch(`/api/jikan/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data: d.data?[d.data]:[]})));
+        fetches.push(fetch(`/api/tenrai/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data: d.data?[d.data]:[]})));
       }
       const settled = await Promise.allSettled(fetches);
       const seen = new Set();
@@ -1458,7 +1486,7 @@ async function fetchFromMAL() {
       }
     } else {
       btn.textContent = '↻ Searching…';
-      const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+      const data = await fetch(`/api/tenrai/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
       results = data.data || [];
       results.sort((a,b)=>(b.score||0)-(a.score||0));
     }
@@ -1511,29 +1539,29 @@ async function applyMALUpdate(idx, cardEl) {
     if (isCyrillic(searchQ)) {
       let shikiMalId = null, fetchTerm = searchQ;
       try {
-        const shikiItems = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+        const shikiItems = await fetch(`/api/tenrai/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
         if (shikiItems?.length > 0) { fetchTerm = shikiItems[0].name || searchQ; shikiMalId = shikiItems[0].id; }
         else { fetchTerm = await translateRuToEn(searchQ) || searchQ; }
       } catch {}
-      const fetches = [ fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()) ];
-      if (shikiMalId) fetches.push(fetch(`/api/jikan/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data:d.data?[d.data]:[]})));
+      const fetches = [ fetch(`/api/tenrai/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()) ];
+      if (shikiMalId) fetches.push(fetch(`/api/tenrai/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data:d.data?[d.data]:[]})));
       const settled = await Promise.allSettled(fetches);
       const seen = new Set();
       for (const r of settled) {
         if (r.status==='fulfilled') {
-          const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
+          const data = await fetch(`/api/tenrai/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
           results = data.data || [];
         }
       }
     } else {
-      const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+      const data = await fetch(`/api/tenrai/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
       results = data.data || [];
     }
     
-    // If Jikan search returned nothing, try AniList search as fallback
+    // If Tenrai search returned nothing, try AniList search as fallback
     if (results.length === 0) {
       try {
-        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+        const anilistSearchData = await fetch(`/api/tenrai/anilist/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
         if (anilistSearchData?.data?.Page?.media?.[0]) {
           const anilistItems = anilistSearchData.data.Page.media;
           results = anilistItems.map(a => ({
@@ -1542,7 +1570,7 @@ async function applyMALUpdate(idx, cardEl) {
             titles: [{ type: 'Default', title: a.title?.english || a.title?.romaji }],
             images: { jpg: { image_url: a.coverImage?.large } }
           }));
-          showToast('✓ Found via AniList (Jikan search failed)', 'success');
+          showToast('✓ Found via AniList (Tenrai search failed)', 'success');
         }
       } catch (e) {
         console.error('AniList search fallback failed:', e);
@@ -1552,13 +1580,13 @@ async function applyMALUpdate(idx, cardEl) {
     const topItem = results.length > 0 ? results[0] : null;
     if (!topItem) { showToast('No result found for: ' + searchQ, 'error'); return; }
 
-    let fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data).catch(() => null);
+    let fullItem = await fetch(`/api/tenrai/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data).catch(() => null);
     
-    // Try AniList fallback if Jikan failed - search by NAME
+    // Try AniList fallback if Tenrai failed - search by NAME
     if (!fullItem) {
       try {
         const animeName = topItem.title || topItem.titles?.[0]?.title || searchQ;
-        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(animeName)}`).then(r=>r.json());
+        const anilistSearchData = await fetch(`/api/tenrai/anilist/search?q=${encodeURIComponent(animeName)}`).then(r=>r.json());
         if (anilistSearchData?.data?.Page?.media?.[0]) {
           const a = anilistSearchData.data.Page.media[0];
           fullItem = {
@@ -1626,12 +1654,12 @@ async function quickAutoFill(id, btnEl) {
     if (isCyrillic(searchQ)) {
       let shikiMalId = null;
       try {
-        const shikiItems = await fetch(`/api/jikan/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+        const shikiItems = await fetch(`/api/tenrai/shikimori?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
         if (shikiItems?.length > 0) { fetchTerm = shikiItems[0].name || searchQ; shikiMalId = shikiItems[0].id; }
         else { fetchTerm = await translateRuToEn(searchQ) || searchQ; }
       } catch {}
-      const fetches = [ fetch(`/api/jikan/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()) ];
-      if (shikiMalId) fetches.push(fetch(`/api/jikan/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data:d.data?[d.data]:[]})));
+      const fetches = [ fetch(`/api/tenrai/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json()) ];
+      if (shikiMalId) fetches.push(fetch(`/api/tenrai/details/${shikiMalId}`).then(r=>r.json()).then(d=>({data:d.data?[d.data]:[]})));
       const settled = await Promise.allSettled(fetches);
       const seen = new Set();
       for (const r of settled) {
@@ -1642,14 +1670,14 @@ async function quickAutoFill(id, btnEl) {
         }
       }
     } else {
-      const data = await fetch(`/api/jikan/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
+      const data = await fetch(`/api/tenrai/search?q=${encodeURIComponent(searchQ)}`).then(r=>r.json());
       results = data.data || [];
     }
     
-    // If Jikan search returned nothing, try AniList search with romaji from Shikimori
+    // If Tenrai search returned nothing, try AniList search with romaji from Shikimori
     if (results.length === 0) {
       try {
-        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
+        const anilistSearchData = await fetch(`/api/tenrai/anilist/search?q=${encodeURIComponent(fetchTerm)}`).then(r=>r.json());
         if (anilistSearchData?.data?.Page?.media?.[0]) {
           const anilistItems = anilistSearchData.data.Page.media;
           results = anilistItems.map(a => ({
@@ -1658,7 +1686,7 @@ async function quickAutoFill(id, btnEl) {
             titles: [{ type: 'Default', title: a.title?.english || a.title?.romaji }],
             images: { jpg: { image_url: a.coverImage?.large } }
           }));
-          showToast('✓ Found via AniList (Jikan search failed)', 'success');
+          showToast('✓ Found via AniList (Tenrai search failed)', 'success');
         }
       } catch (e) {
         console.error('AniList search fallback failed:', e);
@@ -1668,13 +1696,13 @@ async function quickAutoFill(id, btnEl) {
     const topItem = results.length > 0 ? results[0] : null;
     if (!topItem) { showToast('No result found for: ' + searchQ, 'error'); return; }
 
-    let fullItem = await fetch(`/api/jikan/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data).catch(() => null);
+    let fullItem = await fetch(`/api/tenrai/details/${topItem.mal_id}`).then(r=>r.json()).then(d=>d.data).catch(() => null);
     
-    // Try AniList fallback if Jikan failed - search by NAME
+    // Try AniList fallback if Tenrai failed - search by NAME
     if (!fullItem) {
       try {
         const animeName = topItem.title || topItem.titles?.[0]?.title || searchQ;
-        const anilistSearchData = await fetch(`/api/jikan/anilist/search?q=${encodeURIComponent(animeName)}`).then(r=>r.json());
+        const anilistSearchData = await fetch(`/api/tenrai/anilist/search?q=${encodeURIComponent(animeName)}`).then(r=>r.json());
         if (anilistSearchData?.data?.Page?.media?.[0]) {
           const a = anilistSearchData.data.Page.media[0];
           fullItem = {
